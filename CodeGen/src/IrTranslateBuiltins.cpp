@@ -783,6 +783,172 @@ static BuiltinImplResult translateBuiltinBufferWrite(
     return {BuiltinImplType::Full, 0};
 }
 
+static BuiltinImplResult translateBuiltinVectorNew(IrBuilder& build, int nparams, int ra, int arg, IrOp args, int nresults, int pcpos)
+{
+    if (nparams == 0 || nresults > 1)
+        return {BuiltinImplType::None, -1};
+
+    CODEGEN_ASSERT(LUA_VECTOR_SIZE == 3);
+
+    IrOp x, y, z;
+
+    if (nparams >= 1) {
+        builtinCheckDouble(build, build.vmReg(arg), pcpos);
+        x = builtinLoadDouble(build, build.vmReg(arg));
+    } else {
+        x = build.constDouble(0.0);
+    }
+
+    if (nparams >= 2) {
+        builtinCheckDouble(build, args, pcpos);
+        y = builtinLoadDouble(build, args);
+    } else {
+        y = build.constDouble(0.0);
+    }
+
+    if (nparams >= 3) {
+        builtinCheckDouble(build, build.vmReg(vmRegOp(args) + 1), pcpos);
+        z = builtinLoadDouble(build, build.vmReg(vmRegOp(args) + 1));
+    } else {
+        z = build.constDouble(0.0);
+    }
+
+    build.inst(IrCmd::STORE_VECTOR, build.vmReg(ra), x, y, z);
+    build.inst(IrCmd::STORE_TAG, build.vmReg(ra), build.constTag(LUA_TVECTOR));
+
+    return {BuiltinImplType::Full, 1};
+}
+
+static BuiltinImplResult translateBuiltinVectorCross(IrBuilder& build, int nparams, int ra, int arg, IrOp args, int nresults, int pcpos)
+{
+    if (nparams != 2 || nresults > 1)
+        return {BuiltinImplType::None, -1};
+
+    CODEGEN_ASSERT(LUA_VECTOR_SIZE == 3);
+
+    build.loadAndCheckTag(build.vmReg(arg), LUA_TVECTOR, build.vmExit(pcpos));
+    build.loadAndCheckTag(args, LUA_TVECTOR, build.vmExit(pcpos));
+
+    IrOp x1 = build.inst(IrCmd::LOAD_FLOAT, build.vmReg(arg), build.constInt(0));
+    IrOp x2 = build.inst(IrCmd::LOAD_FLOAT, args, build.constInt(0));
+
+    IrOp y1 = build.inst(IrCmd::LOAD_FLOAT, build.vmReg(arg), build.constInt(4));
+    IrOp y2 = build.inst(IrCmd::LOAD_FLOAT, args, build.constInt(4));
+
+    IrOp z1 = build.inst(IrCmd::LOAD_FLOAT, build.vmReg(arg), build.constInt(8));
+    IrOp z2 = build.inst(IrCmd::LOAD_FLOAT, args, build.constInt(8));
+
+    IrOp y1z2 = build.inst(IrCmd::MUL_NUM, y1, z2);
+    IrOp z1y2 = build.inst(IrCmd::MUL_NUM, z1, y2);
+    IrOp xr = build.inst(IrCmd::SUB_NUM, y1z2, z1y2);
+
+    IrOp z1x2 = build.inst(IrCmd::MUL_NUM, z1, x2);
+    IrOp x1z2 = build.inst(IrCmd::MUL_NUM, x1, z2);
+    IrOp yr = build.inst(IrCmd::SUB_NUM, z1x2, x1z2);
+
+    IrOp x1y2 = build.inst(IrCmd::MUL_NUM, x1, y2);
+    IrOp y1x2 = build.inst(IrCmd::MUL_NUM, y1, x2);
+    IrOp zr = build.inst(IrCmd::SUB_NUM, x1y2, y1x2);
+
+    build.inst(IrCmd::STORE_VECTOR, build.vmReg(ra), xr, yr, zr);
+    build.inst(IrCmd::STORE_TAG, build.vmReg(ra), build.constTag(LUA_TVECTOR));
+
+    return {BuiltinImplType::Full, 1};
+}
+
+static BuiltinImplResult translateBuiltinVectorDot(IrBuilder& build, int nparams, int ra, int arg, IrOp args, int nresults, int pcpos)
+{
+    if (nparams != 2 || nresults > 1)
+        return {BuiltinImplType::None, -1};
+
+    CODEGEN_ASSERT(LUA_VECTOR_SIZE == 3);
+
+    build.loadAndCheckTag(build.vmReg(arg), LUA_TVECTOR, build.vmExit(pcpos));
+    build.loadAndCheckTag(args, LUA_TVECTOR, build.vmExit(pcpos));
+
+    IrOp x1 = build.inst(IrCmd::LOAD_FLOAT, build.vmReg(arg), build.constInt(0));
+    IrOp x2 = build.inst(IrCmd::LOAD_FLOAT, args, build.constInt(0));
+    IrOp xx = build.inst(IrCmd::MUL_NUM, x1, x2);
+
+    IrOp y1 = build.inst(IrCmd::LOAD_FLOAT, build.vmReg(arg), build.constInt(4));
+    IrOp y2 = build.inst(IrCmd::LOAD_FLOAT, args, build.constInt(4));
+    IrOp yy = build.inst(IrCmd::MUL_NUM, y1, y2);
+
+    IrOp z1 = build.inst(IrCmd::LOAD_FLOAT, build.vmReg(arg), build.constInt(8));
+    IrOp z2 = build.inst(IrCmd::LOAD_FLOAT, args, build.constInt(8));
+    IrOp zz = build.inst(IrCmd::MUL_NUM, z1, z2);
+
+    IrOp result = build.inst(IrCmd::ADD_NUM, build.inst(IrCmd::ADD_NUM, xx, yy), zz);
+
+    build.inst(IrCmd::STORE_DOUBLE, build.vmReg(ra), result);
+    build.inst(IrCmd::STORE_TAG, build.vmReg(ra), build.constTag(LUA_TNUMBER));
+
+    return {BuiltinImplType::Full, 1};
+}
+
+static BuiltinImplResult translateBuiltinVectorMagnitude(IrBuilder& build, int nparams, int ra, int arg, IrOp args, int nresults, int pcpos)
+{
+    if (nparams != 1 || nresults > 1)
+        return {BuiltinImplType::None, -1};
+
+    CODEGEN_ASSERT(LUA_VECTOR_SIZE == 3);
+
+    build.loadAndCheckTag(build.vmReg(arg), LUA_TVECTOR, build.vmExit(pcpos));
+
+    IrOp x = build.inst(IrCmd::LOAD_FLOAT, build.vmReg(arg), build.constInt(0));
+    IrOp x2 = build.inst(IrCmd::MUL_NUM, x, x);
+
+    IrOp y = build.inst(IrCmd::LOAD_FLOAT, build.vmReg(arg), build.constInt(4));
+    IrOp y2 = build.inst(IrCmd::MUL_NUM, y, y);
+
+    IrOp z = build.inst(IrCmd::LOAD_FLOAT, build.vmReg(arg), build.constInt(8));
+    IrOp z2 = build.inst(IrCmd::MUL_NUM, z, z);
+
+    IrOp sum = build.inst(IrCmd::ADD_NUM, build.inst(IrCmd::ADD_NUM, x2, y2), z2);
+
+    IrOp mag = build.inst(IrCmd::SQRT_NUM, sum);
+
+    build.inst(IrCmd::STORE_DOUBLE, build.vmReg(ra), mag);
+    build.inst(IrCmd::STORE_TAG, build.vmReg(ra), build.constTag(LUA_TNUMBER));
+
+    return {BuiltinImplType::Full, 1};
+}
+
+static BuiltinImplResult translateBuiltinVectorNormalize(
+    IrBuilder& build, int nparams, int ra, int arg, IrOp args, int nresults, int pcpos)
+{
+    if (nparams != 1 || nresults > 1)
+        return {BuiltinImplType::None, -1};
+
+    CODEGEN_ASSERT(LUA_VECTOR_SIZE == 3);
+
+    build.loadAndCheckTag(build.vmReg(arg), LUA_TVECTOR, build.vmExit(pcpos));
+
+    IrOp x = build.inst(IrCmd::LOAD_FLOAT, build.vmReg(arg), build.constInt(0));
+    IrOp x2 = build.inst(IrCmd::MUL_NUM, x, x);
+
+    IrOp y = build.inst(IrCmd::LOAD_FLOAT, build.vmReg(arg), build.constInt(4));
+    IrOp y2 = build.inst(IrCmd::MUL_NUM, y, y);
+
+    IrOp z = build.inst(IrCmd::LOAD_FLOAT, build.vmReg(arg), build.constInt(8));
+    IrOp z2 = build.inst(IrCmd::MUL_NUM, z, z);
+
+    IrOp sum = build.inst(IrCmd::ADD_NUM, build.inst(IrCmd::ADD_NUM, x2, y2), z2);
+
+    IrOp mag = build.inst(IrCmd::SQRT_NUM, sum);
+
+    IrOp inv = build.inst(IrCmd::DIV_NUM, build.constDouble(1.0), mag);
+
+    IrOp xr = build.inst(IrCmd::MUL_NUM, x, inv);
+    IrOp yr = build.inst(IrCmd::MUL_NUM, y, inv);
+    IrOp zr = build.inst(IrCmd::MUL_NUM, z, inv);
+
+    build.inst(IrCmd::STORE_VECTOR, build.vmReg(ra), xr, yr, zr);
+    build.inst(IrCmd::STORE_TAG, build.vmReg(ra), build.constTag(LUA_TVECTOR));
+
+    return {BuiltinImplType::Full, 1};
+}
+
 BuiltinImplResult translateBuiltin(IrBuilder& build, int bfid, int ra, int arg, IrOp args, int nparams, int nresults, IrOp fallback, int pcpos)
 {
     // Builtins are not allowed to handle variadic arguments
@@ -905,6 +1071,16 @@ BuiltinImplResult translateBuiltin(IrBuilder& build, int bfid, int ra, int arg, 
         return translateBuiltinBufferRead(build, nparams, ra, arg, args, nresults, pcpos, IrCmd::BUFFER_READF64, 8, IrCmd::NOP);
     case LBF_BUFFER_WRITEF64:
         return translateBuiltinBufferWrite(build, nparams, ra, arg, args, nresults, pcpos, IrCmd::BUFFER_WRITEF64, 8, IrCmd::NOP);
+    case LBF_VECTOR_NEW:
+        return translateBuiltinVectorNew(build, nparams, ra, arg, args, nresults, pcpos);
+    case LBF_VECTOR_CROSS:
+        return translateBuiltinVectorCross(build, nparams, ra, arg, args, nresults, pcpos);
+    case LBF_VECTOR_DOT:
+        return translateBuiltinVectorDot(build, nparams, ra, arg, args, nresults, pcpos);
+    case LBF_VECTOR_MAGNITUDE:
+        return translateBuiltinVectorMagnitude(build, nparams, ra, arg, args, nresults, pcpos);
+    case LBF_VECTOR_NORMALIZE:
+        return translateBuiltinVectorNormalize(build, nparams, ra, arg, args, nresults, pcpos);
     default:
         return {BuiltinImplType::None, -1};
     }
