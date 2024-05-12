@@ -589,6 +589,13 @@ enum LuauBuiltinFunction
     LBF_BUFFER_WRITEF32,
     LBF_BUFFER_READF64,
     LBF_BUFFER_WRITEF64,
+
+    // vector.
+    LBF_VECTOR_NEW,
+    LBF_VECTOR_CROSS,
+    LBF_VECTOR_DOT,
+    LBF_VECTOR_MAGNITUDE,
+    LBF_VECTOR_NORMALIZE,
 };
 
 // Capture type, used in LOP_CAPTURE

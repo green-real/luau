@@ -479,6 +479,71 @@ Constant foldBuiltin(int bfid, const Constant* args, size_t count)
                 return cvector(args[0].valueNumber, args[1].valueNumber, args[2].valueNumber, args[3].valueNumber);
         }
         break;
+
+    case LBF_VECTOR_NEW:
+        {
+            double x = count >= 1 && args[0].type == Constant::Type_Number ? args[0].valueNumber : 0.0;
+            double y = count >= 2 && args[1].type == Constant::Type_Number ? args[1].valueNumber : 0.0;
+            double z = count >= 3 && args[2].type == Constant::Type_Number ? args[2].valueNumber : 0.0;
+
+            return cvector(x, y, z, 0.0);
+        }
+        break;
+
+    case LBF_VECTOR_CROSS:
+        if (count == 2 && args[0].type == Constant::Type_Vector && args[1].type == Constant::Type_Vector)
+        {
+            float x1 = args[0].valueVector[0];
+            float y1 = args[0].valueVector[1];
+            float z1 = args[0].valueVector[2];
+
+            float x2 = args[1].valueVector[0];
+            float y2 = args[1].valueVector[1];
+            float z2 = args[1].valueVector[2];
+
+            return cvector(y1 * z2 - z1 * y2, z1 * x2 - x1 * z2, x1 * y2 - y1 * x2, 0.0);
+        }
+        break;
+
+    case LBF_VECTOR_DOT:
+        if (count == 2 && args[0].type == Constant::Type_Vector && args[1].type == Constant::Type_Vector)
+        {
+            float x1 = args[0].valueVector[0];
+            float y1 = args[0].valueVector[1];
+            float z1 = args[0].valueVector[2];
+
+            float x2 = args[1].valueVector[0];
+            float y2 = args[1].valueVector[1];
+            float z2 = args[1].valueVector[2];
+
+            return cnum(x1 * x2 + y1 * y2 + z1 * z2);
+        }
+        break;
+
+    case LBF_VECTOR_MAGNITUDE:
+        if (count == 1 && args[0].type == Constant::Type_Vector)
+        {
+            float x = args[0].valueVector[0];
+            float y = args[0].valueVector[1];
+            float z = args[0].valueVector[2];
+
+            return cnum(sqrtf(x * x + y * y + z * z));
+        }
+        break;
+
+    case LBF_VECTOR_NORMALIZE:
+        if (count == 1 && args[0].type == Constant::Type_Vector)
+        {
+            float x = args[0].valueVector[0];
+            float y = args[0].valueVector[1];
+            float z = args[0].valueVector[2];
+
+            float mag = sqrtf(x * x + y * y + z * z);
+
+            if (mag > 0.0f)
+                return cvector(x / mag, y / mag, z / mag, 0.0);
+        }
+        break;
     }
 
     return cvar();

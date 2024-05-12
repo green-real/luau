@@ -1437,6 +1437,108 @@ static int luauF_writefp(lua_State* L, StkId res, TValue* arg0, int nresults, St
     return -1;
 }
 
+static int luauF_vnew(lua_State* L, StkId res, TValue* arg0, int nresults, StkId args, int nparams)
+{
+    // creates a vector from 3 optional number arguments
+    if (nresults <= 1)
+    {
+        float x = 0.0f, y = 0.0f, z = 0.0f;
+
+        if (ttisnumber(arg0))
+            x = float(nvalue(arg0));
+        else if (!ttisnil(arg0))
+            return -1;
+
+        if (nparams >= 2 && ttisnumber(args))
+            y = float(nvalue(args));
+        else if (nparams >= 2 && !ttisnil(args))
+            return -1;
+
+        if (nparams >= 3 && ttisnumber(args + 1))
+            z = float(nvalue(args + 1));
+        else if (nparams >= 3 && !ttisnil(args + 1))
+            return -1;
+
+        setvvalue(res, x, y, z, 0.0f);
+        return 1;
+    }
+    return -1;
+}
+
+static int luauF_vcross(lua_State* L, StkId res, TValue* arg0, int nresults, StkId args, int nparams)
+{
+    if (nparams == 2 && nresults <= 1 && ttisvector(arg0) && ttisvector(args))
+    {
+        float x1 = vvalue(arg0)[0];
+        float y1 = vvalue(arg0)[1];
+        float z1 = vvalue(arg0)[2];
+
+        float x2 = vvalue(args)[0];
+        float y2 = vvalue(args)[1];
+        float z2 = vvalue(args)[2];
+
+        setvvalue(res, y1 * z2 - z1 * y2, z1 * x2 - x1 * z2, x1 * y2 - y1 * x2, 0.0f);
+        return 1;
+    }
+
+    return -1;
+}
+
+static int luauF_vdot(lua_State* L, StkId res, TValue* arg0, int nresults, StkId args, int nparams)
+{
+    if (nparams == 2 && nresults <= 1 && ttisvector(arg0) && ttisvector(args))
+    {
+        float x1 = vvalue(arg0)[0];
+        float y1 = vvalue(arg0)[1];
+        float z1 = vvalue(arg0)[2];
+
+        float x2 = vvalue(args)[0];
+        float y2 = vvalue(args)[1];
+        float z2 = vvalue(args)[2];
+
+        setnvalue(res, double(x1 * x2 + y1 * y2 + z1 * z2));
+        return 1;
+    }
+
+    return -1;
+}
+
+static int luauF_vmag(lua_State* L, StkId res, TValue* arg0, int nresults, StkId args, int nparams)
+{
+    if (nresults <= 1 && ttisvector(arg0))
+    {
+        float x = vvalue(arg0)[0];
+        float y = vvalue(arg0)[1];
+        float z = vvalue(arg0)[2];
+
+        setnvalue(res, double(sqrt(x * x + y * y + z * z)));
+        return 1;
+    }
+
+    return -1;
+}
+
+static int luauF_vnorm(lua_State* L, StkId res, TValue* arg0, int nresults, StkId args, int nparams)
+{
+    if (nresults <= 1 && ttisvector(arg0))
+    {
+        float x = vvalue(arg0)[0];
+        float y = vvalue(arg0)[1];
+        float z = vvalue(arg0)[2];
+
+        float mag = float(sqrt(x * x + y * y + z * z));
+        if (mag != 0.0f)
+        {
+            setvvalue(res, x / mag, y / mag, z / mag, 0.0f);
+            return 1;
+        } else {
+            return -1;
+        }
+    }
+
+    return -1;
+}
+
 static int luauF_missing(lua_State* L, StkId res, TValue* arg0, int nresults, StkId args, int nparams)
 {
     return -1;
@@ -1619,6 +1721,12 @@ const luau_FastFunction luauF_table[256] = {
     luauF_writefp<float>,
     luauF_readfp<double>,
     luauF_writefp<double>,
+
+    luauF_vnew,
+    luauF_vcross,
+    luauF_vdot,
+    luauF_vmag,
+    luauF_vnorm,
 
 // When adding builtins, add them above this line; what follows is 64 "dummy" entries with luauF_missing fallback.
 // This is important so that older versions of the runtime that don't support newer builtins automatically fall back via luauF_missing.

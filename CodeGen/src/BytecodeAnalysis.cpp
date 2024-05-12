@@ -470,6 +470,32 @@ static void applyBuiltinCall(int bfid, BytecodeTypes& types)
         types.b = LBC_TYPE_NUMBER;
         types.c = LBC_TYPE_NUMBER;
         break;
+    case LBF_VECTOR_NEW:
+        types.result = LBC_TYPE_VECTOR;
+
+        // We can mark optional arguments
+        types.a = LBC_TYPE_NUMBER;
+        types.b = LBC_TYPE_NUMBER;
+        types.c = LBC_TYPE_NUMBER;
+        break;
+    case LBF_VECTOR_CROSS:
+        types.result = LBC_TYPE_VECTOR;
+        types.a = LBC_TYPE_VECTOR;
+        types.b = LBC_TYPE_VECTOR;
+        break;
+    case LBF_VECTOR_DOT:
+        types.result = LBC_TYPE_NUMBER;
+        types.a = LBC_TYPE_VECTOR;
+        types.b = LBC_TYPE_VECTOR;
+        break;
+    case LBF_VECTOR_MAGNITUDE:
+        types.result = LBC_TYPE_NUMBER;
+        types.a = LBC_TYPE_VECTOR;
+        break;
+    case LBF_VECTOR_NORMALIZE:
+        types.result = LBC_TYPE_VECTOR;
+        types.a = LBC_TYPE_VECTOR;
+        break;
     case LBF_BIT32_COUNTLZ:
     case LBF_BIT32_COUNTRZ:
         types.result = LBC_TYPE_NUMBER;

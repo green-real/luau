@@ -220,6 +220,20 @@ static int getBuiltinFunctionId(const Builtin& builtin, const CompileOptions& op
             return LBF_BUFFER_WRITEF64;
     }
 
+    if (builtin.object == "vector")
+    {
+        if (builtin.method == "new")
+            return LBF_VECTOR_NEW;
+        if (builtin.method == "cross")
+            return LBF_VECTOR_CROSS;
+        if (builtin.method == "dot")
+            return LBF_VECTOR_DOT;
+        if (builtin.method == "magnitude")
+            return LBF_VECTOR_MAGNITUDE;
+        if (builtin.method == "normalize")
+            return LBF_VECTOR_NORMALIZE;
+    }
+
     if (options.vectorCtor)
     {
         if (options.vectorLib)
@@ -454,6 +468,15 @@ BuiltinInfo getBuiltinInfo(int bfid)
     case LBF_BUFFER_WRITEF32:
     case LBF_BUFFER_WRITEF64:
         return {3, 0, BuiltinInfo::Flag_NoneSafe};
+
+    case LBF_VECTOR_NEW:
+        return {3, 1, BuiltinInfo::Flag_NoneSafe};
+    case LBF_VECTOR_CROSS:
+    case LBF_VECTOR_DOT:
+        return {2, 1, BuiltinInfo::Flag_NoneSafe};
+    case LBF_VECTOR_MAGNITUDE:
+    case LBF_VECTOR_NORMALIZE:
+        return {1, 1, BuiltinInfo::Flag_NoneSafe};
     }
 
     LUAU_UNREACHABLE();
