@@ -20,6 +20,28 @@ static int vector_new(lua_State* L)
     return 1;
 }
 
+static int vector_cross(lua_State* L)
+{
+    const float* v1 = luaL_checkvector(L, 1);
+    const float* v2 = luaL_checkvector(L, 2);
+
+    lua_pushvector(L, v1[1] * v2[2] - v1[2] * v2[1], v1[2] * v2[0] - v1[0] * v2[2], v1[0] * v2[1] - v1[1] * v2[0]);
+
+    return 1;
+}
+
+static int vector_dot(lua_State* L)
+{
+    const float* v1 = luaL_checkvector(L, 1);
+    const float* v2 = luaL_checkvector(L, 2);
+
+    float dot = v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2];
+
+    lua_pushnumber(L, dot);
+
+    return 1;
+}
+
 static int vector_magnitude(lua_State* L)
 {
     const float* v = luaL_checkvector(L, 1);
@@ -42,34 +64,12 @@ static int vector_normalize(lua_State* L)
     return 1;
 }
 
-static int vector_dot(lua_State* L)
-{
-    const float* v1 = luaL_checkvector(L, 1);
-    const float* v2 = luaL_checkvector(L, 2);
-
-    float dot = v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2];
-
-    lua_pushnumber(L, dot);
-
-    return 1;
-}
-
-static int vector_cross(lua_State* L)
-{
-    const float* v1 = luaL_checkvector(L, 1);
-    const float* v2 = luaL_checkvector(L, 2);
-
-    lua_pushvector(L, v1[1] * v2[2] - v1[2] * v2[1], v1[2] * v2[0] - v1[0] * v2[2], v1[0] * v2[1] - v1[1] * v2[0]);
-
-    return 1;
-}
-
 static const luaL_Reg vectorlib[] = {
     {"new", vector_new},
+    {"cross", vector_cross},
+    {"dot", vector_dot},
     {"magnitude", vector_magnitude},
     {"normalize", vector_normalize},
-    {"dot", vector_dot},
-    {"cross", vector_cross},
     {NULL, NULL},
 };
 

@@ -613,6 +613,11 @@ TEST_CASE("Vector")
         nullptr, nullptr, &copts, false, &nativeOpts);
 }
 
+TEST_CASE("VectorLib")
+{
+    runConformance("vectorlib.lua");
+}
+
 static void populateRTTI(lua_State* L, Luau::TypeId type)
 {
     if (auto p = Luau::get<Luau::PrimitiveType>(type))

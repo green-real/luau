@@ -29,7 +29,7 @@ declare vector: {
     new: (x: number?, y: number?, z: number?) -> vector,
 
     cross: (v1: vector, v2: vector) -> vector,
-    dot: (v1: vector, v2: vector) -> vector,
+    dot: (v1: vector, v2: vector) -> number,
     magnitude: (v: vector) -> number,
     normalize: (v: vector) -> vector,
 }
@@ -257,14 +257,25 @@ declare class vector
     x: number
     y: number
     z: number
+    
+    function __add(self, other: vector): vector
+
+    function __sub(self, other: vector): vector
+
+    function __mul(self, other: vector): vector
+    function __mul(self, other: number): vector
+
+    function __div(self, other: vector): vector
+    function __div(self, other: number): vector
 end
 
 declare vector: {
-    new: (x: number?, y: number?, z: number?) -> vector,
-    magnitude: (v: vector) -> number,
-    normalize: (v: vector) -> vector,
-    cross: (v1: vector, v2: vector) -> vector,
-    dot: (v1: vector, v2: vector) -> vector,
+    new: @checked (x: number?, y: number?, z: number?) -> vector,
+
+    cross: @checked (v1: vector, v2: vector) -> vector,
+    dot: @checked (v1: vector, v2: vector) -> number,
+    magnitude: @checked (v: vector) -> number,
+    normalize: @checked (v: vector) -> vector,
 }
 
 declare bit32: {

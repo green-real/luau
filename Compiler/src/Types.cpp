@@ -722,6 +722,7 @@ struct TypeMapVisitor : AstVisitor
             case LBF_BUFFER_READF32:
             case LBF_BUFFER_READF64:
             case LBF_VECTOR_DOT:
+            case LBF_VECTOR_MAGNITUDE:
                 recordResolvedType(node, &builtinTypes.numberType);
                 break;
 
@@ -740,7 +741,6 @@ struct TypeMapVisitor : AstVisitor
             case LBF_VECTOR:
             case LBF_VECTOR_NEW:
             case LBF_VECTOR_CROSS:
-            case LBF_VECTOR_MAGNITUDE:
             case LBF_VECTOR_NORMALIZE:
                 recordResolvedType(node, &builtinTypes.vectorType);
                 break;
