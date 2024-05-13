@@ -1437,7 +1437,7 @@ static int luauF_writefp(lua_State* L, StkId res, TValue* arg0, int nresults, St
     return -1;
 }
 
-static int luauF_vnew(lua_State* L, StkId res, TValue* arg0, int nresults, StkId args, int nparams)
+static int luauF_vecnew(lua_State* L, StkId res, TValue* arg0, int nresults, StkId args, int nparams)
 {
     if (nparams >= 1 && nresults <= 1)
     {
@@ -1471,7 +1471,7 @@ static int luauF_vnew(lua_State* L, StkId res, TValue* arg0, int nresults, StkId
     return -1;
 }
 
-static int luauF_vcross(lua_State* L, StkId res, TValue* arg0, int nresults, StkId args, int nparams)
+static int luauF_veccross(lua_State* L, StkId res, TValue* arg0, int nresults, StkId args, int nparams)
 {
     if (nparams == 2 && nresults <= 1 && ttisvector(arg0) && ttisvector(args))
     {   
@@ -1491,7 +1491,7 @@ static int luauF_vcross(lua_State* L, StkId res, TValue* arg0, int nresults, Stk
     return -1;
 }
 
-static int luauF_vdot(lua_State* L, StkId res, TValue* arg0, int nresults, StkId args, int nparams)
+static int luauF_vecdot(lua_State* L, StkId res, TValue* arg0, int nresults, StkId args, int nparams)
 {
     if (nparams == 2 && nresults <= 1 && ttisvector(arg0) && ttisvector(args))
     {
@@ -1511,7 +1511,7 @@ static int luauF_vdot(lua_State* L, StkId res, TValue* arg0, int nresults, StkId
     return -1;
 }
 
-static int luauF_vmag(lua_State* L, StkId res, TValue* arg0, int nresults, StkId args, int nparams)
+static int luauF_vecmag(lua_State* L, StkId res, TValue* arg0, int nresults, StkId args, int nparams)
 {
     if (nresults <= 1 && ttisvector(arg0))
     {
@@ -1526,7 +1526,7 @@ static int luauF_vmag(lua_State* L, StkId res, TValue* arg0, int nresults, StkId
     return -1;
 }
 
-static int luauF_vnorm(lua_State* L, StkId res, TValue* arg0, int nresults, StkId args, int nparams)
+static int luauF_vecnorm(lua_State* L, StkId res, TValue* arg0, int nresults, StkId args, int nparams)
 {
     if (nresults <= 1 && ttisvector(arg0))
     {
@@ -1727,11 +1727,11 @@ const luau_FastFunction luauF_table[256] = {
     luauF_readfp<double>,
     luauF_writefp<double>,
 
-    luauF_vnew,
-    luauF_vcross,
-    luauF_vdot,
-    luauF_vmag,
-    luauF_vnorm,
+    luauF_vecnew,
+    luauF_veccross,
+    luauF_vecdot,
+    luauF_vecmag,
+    luauF_vecnorm,
 
 // When adding builtins, add them above this line; what follows is 64 "dummy" entries with luauF_missing fallback.
 // This is important so that older versions of the runtime that don't support newer builtins automatically fall back via luauF_missing.
