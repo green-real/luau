@@ -12,6 +12,7 @@ static int vector_new(lua_State* L)
     float z = float(luaL_optnumber(L, 3, 0.0f));
 
 #if LUA_VECTOR_SIZE == 4
+    float w = float(luaL_optnumber(L, 4, 0.0f));
     lua_pushvector(L, x, y, z, 0.0f);
 #else
     lua_pushvector(L, x, y, z);
@@ -25,7 +26,11 @@ static int vector_cross(lua_State* L)
     const float* v1 = luaL_checkvector(L, 1);
     const float* v2 = luaL_checkvector(L, 2);
 
+#if LUA_VECTOR_SIZE == 4
+    lua_pushvector(L, v1[1] * v2[2] - v1[2] * v2[1], v1[2] * v2[0] - v1[0] * v2[2], v1[0] * v2[1] - v1[1] * v2[0], 0.0f);
+#else
     lua_pushvector(L, v1[1] * v2[2] - v1[2] * v2[1], v1[2] * v2[0] - v1[0] * v2[2], v1[0] * v2[1] - v1[1] * v2[0]);
+#endif
 
     return 1;
 }
@@ -59,7 +64,11 @@ static int vector_normalize(lua_State* L)
 
     float mag = sqrtf(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
 
+#if LUA_VECTOR_SIZE == 4
+    lua_pushvector(L, v[0] / mag, v[1] / mag, v[2] / mag, v[3] / mag);
+#else
     lua_pushvector(L, v[0] / mag, v[1] / mag, v[2] / mag);
+#endif
 
     return 1;
 }

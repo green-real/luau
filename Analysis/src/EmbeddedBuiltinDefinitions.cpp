@@ -4,6 +4,8 @@
 LUAU_FASTFLAGVARIABLE(LuauCheckedEmbeddedDefinitions2, false);
 LUAU_FASTFLAG(LuauCheckedFunctionSyntax);
 
+// TODO: have vector.new allow an extra argument if LUA_VECTOR_SIZE == 4
+
 namespace Luau
 {
 
@@ -271,7 +273,7 @@ end
 
 declare vector: {
     new: @checked (x: number?, y: number?, z: number?) -> vector,
-
+    
     cross: @checked (v1: vector, v2: vector) -> vector,
     dot: @checked (v1: vector, v2: vector) -> number,
     magnitude: @checked (v: vector) -> number,
