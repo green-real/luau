@@ -32,7 +32,7 @@ static Constant cnum(double v)
     return res;
 }
 
-static Constant cvector(double x, double y, double z, double w)
+static Constant cvector(float x, float y, float z, float w)
 {
     Constant res = {Constant::Type_Vector};
     res.valueVector[0] = (float)x;
@@ -473,20 +473,24 @@ Constant foldBuiltin(int bfid, const Constant* args, size_t count)
     case LBF_VECTOR:
         if (count >= 3 && args[0].type == Constant::Type_Number && args[1].type == Constant::Type_Number && args[2].type == Constant::Type_Number)
         {
+            float x = float(args[0].valueNumber);
+            float y = float(args[1].valueNumber);
+            float z = float(args[2].valueNumber);
+
             if (count == 3)
-                return cvector(args[0].valueNumber, args[1].valueNumber, args[2].valueNumber, 0.0);
+                return cvector(x, y, z, 0.0);
             else if (count == 4 && args[3].type == Constant::Type_Number)
-                return cvector(args[0].valueNumber, args[1].valueNumber, args[2].valueNumber, args[3].valueNumber);
+                return cvector(x, y, z, float(args[3].valueNumber));
         }
         break;
 
     case LBF_VECTOR_NEW:
         {
-            double x = count >= 1 && args[0].type == Constant::Type_Number ? args[0].valueNumber : 0.0;
-            double y = count >= 2 && args[1].type == Constant::Type_Number ? args[1].valueNumber : 0.0;
-            double z = count >= 3 && args[2].type == Constant::Type_Number ? args[2].valueNumber : 0.0;
+            float x = count >= 1 && args[0].type == Constant::Type_Number ? float(args[0].valueNumber) : 0.0f;
+            float y = count >= 2 && args[1].type == Constant::Type_Number ? float(args[1].valueNumber) : 0.0f;
+            float z = count >= 3 && args[2].type == Constant::Type_Number ? float(args[2].valueNumber) : 0.0f;
 
-            return cvector(x, y, z, 0.0);
+            return cvector(x, y, z, 0.0f);
         }
         break;
 
@@ -501,7 +505,7 @@ Constant foldBuiltin(int bfid, const Constant* args, size_t count)
             float y2 = args[1].valueVector[1];
             float z2 = args[1].valueVector[2];
 
-            return cvector(y1 * z2 - z1 * y2, z1 * x2 - x1 * z2, x1 * y2 - y1 * x2, 0.0);
+            return cvector(y1 * z2 - z1 * y2, z1 * x2 - x1 * z2, x1 * y2 - y1 * x2, 0.0f);
         }
         break;
 
@@ -540,8 +544,7 @@ Constant foldBuiltin(int bfid, const Constant* args, size_t count)
 
             float mag = sqrtf(x * x + y * y + z * z);
 
-            if (mag > 0.0f)
-                return cvector(x / mag, y / mag, z / mag, 0.0);
+            return cvector(x / mag, y / mag, z / mag, 0.0);
         }
         break;
     }
