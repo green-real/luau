@@ -172,14 +172,6 @@ static void foldBinary(Constant& result, AstExprBinary::Op op, const Constant& l
             result.valueVector[2] = floor(la.valueVector[2] / float(ra.valueNumber));
             result.valueVector[3] = floor(la.valueVector[3] / float(ra.valueNumber));
         }
-        else if (la.type == Constant::Type_Number && ra.type == Constant::Type_Vector)
-        {
-            result.type = Constant::Type_Vector;
-            result.valueVector[0] = floor(float(la.valueNumber) / ra.valueVector[0]);
-            result.valueVector[1] = floor(float(la.valueNumber) / ra.valueVector[1]);
-            result.valueVector[2] = floor(float(la.valueNumber) / ra.valueVector[2]);
-            result.valueVector[3] = floor(float(la.valueNumber) / ra.valueVector[3]);
-        }
         break;
 
     case AstExprBinary::Mod:
