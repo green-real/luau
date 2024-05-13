@@ -477,6 +477,9 @@ static void applyBuiltinCall(int bfid, BytecodeTypes& types)
         types.a = LBC_TYPE_NUMBER;
         types.b = LBC_TYPE_NUMBER;
         types.c = LBC_TYPE_NUMBER;
+#if LUA_VECTOR_SIZE == 4
+        types.d = LBC_TYPE_NUMBER;
+#endif
         break;
     case LBF_VECTOR_CROSS:
         types.result = LBC_TYPE_VECTOR;

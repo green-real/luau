@@ -489,8 +489,12 @@ Constant foldBuiltin(int bfid, const Constant* args, size_t count)
             float x = count >= 1 && args[0].type == Constant::Type_Number ? float(args[0].valueNumber) : 0.0f;
             float y = count >= 2 && args[1].type == Constant::Type_Number ? float(args[1].valueNumber) : 0.0f;
             float z = count >= 3 && args[2].type == Constant::Type_Number ? float(args[2].valueNumber) : 0.0f;
+            float w = 0.0f;
+#if LUAU_VECTOR_SIZE == 4
+            w = count >= 4 && args[3].type == Constant::Type_Number ? float(args[3].valueNumber) : 0.0f;
+#endif
 
-            return cvector(x, y, z, 0.0f);
+            return cvector(x, y, z, w);
         }
         break;
 
