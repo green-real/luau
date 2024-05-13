@@ -1765,12 +1765,11 @@ void BytecodeBuilder::dumpConstant(std::string& result, int k) const
         formatAppend(result, "%.17g", data.valueNumber);
         break;
     case Constant::Type_Vector:
-        // 3-vectors is the most common configuration, so truncate to three components if LUA_VECTOR_SIZE isn't 4
-#if LUA_VECTOR_SIZE == 4
-        formatAppend(result, "%.9g, %.9g, %.9g, %.9g", data.valueVector[0], data.valueVector[1], data.valueVector[2], data.valueVector[3]);
-#else
-        formatAppend(result, "%.9g, %.9g, %.9g", data.valueVector[0], data.valueVector[1], data.valueVector[2]);
-#endif
+        // 3-vectors is the most common configuration, so truncate to three components if possible
+        if (data.valueVector[3] == 0.0)
+            formatAppend(result, "%.9g, %.9g, %.9g", data.valueVector[0], data.valueVector[1], data.valueVector[2]);
+        else
+            formatAppend(result, "%.9g, %.9g, %.9g, %.9g", data.valueVector[0], data.valueVector[1], data.valueVector[2], data.valueVector[3]);
         break;
     case Constant::Type_String:
     {
