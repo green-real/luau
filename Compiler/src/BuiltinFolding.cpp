@@ -540,8 +540,7 @@ Constant foldBuiltin(int bfid, const Constant* args, size_t count)
 
             float mag = sqrtf(x * x + y * y + z * z);
 
-            if (mag > 0.0f)
-                return cvector(x / mag, y / mag, z / mag, 0.0);
+            return cvector(x / mag, y / mag, z / mag, 0.0);
         }
         break;
     }
