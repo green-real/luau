@@ -1441,7 +1441,7 @@ static int luauF_vnew(lua_State* L, StkId res, TValue* arg0, int nresults, StkId
 {
     if (nparams >= 1 && nresults <= 1)
     {
-        float x, y, z, w;
+        float x, y, z, w = 0.0f;
 
         if (ttisnumber(arg0))
             x = float(arg0->value.n);
@@ -1464,7 +1464,6 @@ static int luauF_vnew(lua_State* L, StkId res, TValue* arg0, int nresults, StkId
         else if (nparams >= 4 && !ttisnil(args + 2))
             return -1;
 #endif
-        
 
         setvvalue(res, x, y, z, w);
         return 1;
