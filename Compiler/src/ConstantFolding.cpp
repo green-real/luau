@@ -72,6 +72,7 @@ static void foldUnary(Constant& result, AstExprUnary::Op op, const Constant& arg
     }
 }
 
+// TODO: add vector operations
 static void foldBinary(Constant& result, AstExprBinary::Op op, const Constant& la, const Constant& ra)
 {
     switch (op)
