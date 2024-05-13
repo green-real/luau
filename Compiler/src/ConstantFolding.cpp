@@ -72,7 +72,32 @@ static void foldUnary(Constant& result, AstExprUnary::Op op, const Constant& arg
     }
 }
 
-// TODO: add vector operations
+#define HANDLE_VECTOR_BINARY(op) \
+    if (la.type == Constant::Type_Vector && ra.type == Constant::Type_Vector) \
+    { \
+        result.type = Constant::Type_Vector; \
+        result.valueVector[0] = la.valueVector[0] op ra.valueVector[0]; \
+        result.valueVector[1] = la.valueVector[1] op ra.valueVector[1]; \
+        result.valueVector[2] = la.valueVector[2] op ra.valueVector[2]; \
+        result.valueVector[3] = la.valueVector[3] op ra.valueVector[3]; \
+    } \
+    else if (la.type == Constant::Type_Vector && ra.type == Constant::Type_Number) \
+    { \
+        result.type = Constant::Type_Vector; \
+        result.valueVector[0] = la.valueVector[0] op float(ra.valueNumber); \
+        result.valueVector[1] = la.valueVector[1] op float(ra.valueNumber); \
+        result.valueVector[2] = la.valueVector[2] op float(ra.valueNumber); \
+        result.valueVector[3] = la.valueVector[3] op float(ra.valueNumber); \
+    } \
+    else if (la.type == Constant::Type_Number && ra.type == Constant::Type_Vector) \
+    { \
+        result.type = Constant::Type_Vector; \
+        result.valueVector[0] = float(la.valueNumber) op ra.valueVector[0]; \
+        result.valueVector[1] = float(la.valueNumber) op ra.valueVector[1]; \
+        result.valueVector[2] = float(la.valueNumber) op ra.valueVector[2]; \
+        result.valueVector[3] = float(la.valueNumber) op ra.valueVector[3]; \
+    }
+
 static void foldBinary(Constant& result, AstExprBinary::Op op, const Constant& la, const Constant& ra)
 {
     switch (op)
@@ -83,6 +108,10 @@ static void foldBinary(Constant& result, AstExprBinary::Op op, const Constant& l
             result.type = Constant::Type_Number;
             result.valueNumber = la.valueNumber + ra.valueNumber;
         }
+        else
+        {
+            HANDLE_VECTOR_BINARY(+)
+        }
         break;
 
     case AstExprBinary::Sub:
@@ -90,6 +119,10 @@ static void foldBinary(Constant& result, AstExprBinary::Op op, const Constant& l
         {
             result.type = Constant::Type_Number;
             result.valueNumber = la.valueNumber - ra.valueNumber;
+        }
+        else
+        {
+            HANDLE_VECTOR_BINARY(-)
         }
         break;
 
@@ -99,6 +132,10 @@ static void foldBinary(Constant& result, AstExprBinary::Op op, const Constant& l
             result.type = Constant::Type_Number;
             result.valueNumber = la.valueNumber * ra.valueNumber;
         }
+        else
+        {
+            HANDLE_VECTOR_BINARY(*)
+        }
         break;
 
     case AstExprBinary::Div:
@@ -107,6 +144,10 @@ static void foldBinary(Constant& result, AstExprBinary::Op op, const Constant& l
             result.type = Constant::Type_Number;
             result.valueNumber = la.valueNumber / ra.valueNumber;
         }
+        else
+        {
+            HANDLE_VECTOR_BINARY(/)
+        }
         break;
 
     case AstExprBinary::FloorDiv:
@@ -114,6 +155,30 @@ static void foldBinary(Constant& result, AstExprBinary::Op op, const Constant& l
         {
             result.type = Constant::Type_Number;
             result.valueNumber = floor(la.valueNumber / ra.valueNumber);
+        }
+        else if (la.type == Constant::Type_Vector && ra.type == Constant::Type_Vector)
+        {
+            result.type = Constant::Type_Vector;
+            result.valueVector[0] = floor(la.valueVector[0] / ra.valueVector[0]);
+            result.valueVector[1] = floor(la.valueVector[1] / ra.valueVector[1]);
+            result.valueVector[2] = floor(la.valueVector[2] / ra.valueVector[2]);
+            result.valueVector[3] = floor(la.valueVector[3] / ra.valueVector[3]);
+        }
+        else if (la.type == Constant::Type_Vector && ra.type == Constant::Type_Number)
+        {
+            result.type = Constant::Type_Vector;
+            result.valueVector[0] = floor(la.valueVector[0] / float(ra.valueNumber));
+            result.valueVector[1] = floor(la.valueVector[1] / float(ra.valueNumber));
+            result.valueVector[2] = floor(la.valueVector[2] / float(ra.valueNumber));
+            result.valueVector[3] = floor(la.valueVector[3] / float(ra.valueNumber));
+        }
+        else if (la.type == Constant::Type_Number && ra.type == Constant::Type_Vector)
+        {
+            result.type = Constant::Type_Vector;
+            result.valueVector[0] = floor(float(la.valueNumber) / ra.valueVector[0]);
+            result.valueVector[1] = floor(float(la.valueNumber) / ra.valueVector[1]);
+            result.valueVector[2] = floor(float(la.valueNumber) / ra.valueVector[2]);
+            result.valueVector[3] = floor(float(la.valueNumber) / ra.valueVector[3]);
         }
         break;
 
@@ -442,7 +507,7 @@ struct ConstantVisitor : AstVisitor
             {
                 for (size_t i = node->values.size; i < node->vars.size; ++i)
                 {
-                    Constant nil = {Constant::Type_Nil};
+                    Constant nil{Constant::Type_Nil};
                     recordValue(node->vars.data[i], nil);
                 }
             }
