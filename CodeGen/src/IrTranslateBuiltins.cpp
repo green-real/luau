@@ -937,6 +937,7 @@ static BuiltinImplResult translateBuiltinVectorNormalize(
 
     IrOp mag = build.inst(IrCmd::SQRT_NUM, sum);
 
+    // Note: could be replace with NUM_TO_VEC(mag), DIV_VEC(ra, mag) for better performance(?)
     IrOp inv = build.inst(IrCmd::DIV_NUM, build.constDouble(1.0), mag);
 
     IrOp xr = build.inst(IrCmd::MUL_NUM, x, inv);
