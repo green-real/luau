@@ -13,6 +13,9 @@ local ignore =
 }
 
 function verify(real, rtti, path)
+	-- print("actual object", real)
+	-- print("rtti object", rtti)
+	-- print("path", path)
 	if table.find(ignore, path) then
 		return
 	end

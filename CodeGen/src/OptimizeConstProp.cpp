@@ -510,7 +510,7 @@ static void handleBuiltinEffects(ConstPropState& state, LuauBuiltinFunction bfid
     case LBF_VECTOR_CROSS:
     case LBF_VECTOR_DOT:
     case LBF_VECTOR_MAGNITUDE:
-    case LBF_VECTOR_NORMALIZE:
+    case LBF_VECTOR_NORMALIZED:
     case LBF_BIT32_COUNTLZ:
     case LBF_BIT32_COUNTRZ:
     case LBF_SELECT_VARARG:

@@ -4,7 +4,7 @@
 LUAU_FASTFLAGVARIABLE(LuauCheckedEmbeddedDefinitions2, false);
 LUAU_FASTFLAG(LuauCheckedFunctionSyntax);
 
-// TODO: have vector.new allow an extra argument if LUA_VECTOR_SIZE == 4
+// TODO: have vector() allow an extra argument if LUA_VECTOR_SIZE == 4
 
 namespace Luau
 {
@@ -15,26 +15,43 @@ declare class vector
     x: number
     y: number
     z: number
-    
+
+    function angle(self, other: vector): number
+    function ceil(self): vector
+    function cross(self, other: vector): vector
+    function dot(self, other: vector): number
+    function floor(self): vector
+    function magnitude(self): number
+    function max(self, other: vector): vector
+    function min(self, other: vector): vector
+    function normalized(self): vector
+
     function __add(self, other: vector): vector
-
     function __sub(self, other: vector): vector
-
     function __mul(self, other: vector): vector
     function __mul(self, other: number): vector
-
     function __div(self, other: vector): vector
     function __div(self, other: number): vector
 end
 
-declare vector: {
-    new: (x: number?, y: number?, z: number?) -> vector,
+declare class vector_lib
+    function __call(self, x: number?, y: number?, z: number?): vector
 
-    cross: (v1: vector, v2: vector) -> vector,
-    dot: (v1: vector, v2: vector) -> number,
-    magnitude: (v: vector) -> number,
-    normalize: (v: vector) -> vector,
-}
+    one: vector
+    zero: vector
+
+    angle: (a: vector, b: vector) -> number
+    ceil: (v: vector) -> vector
+    cross: (a: vector, b: vector) -> vector
+    dot: (a: vector, b: vector) -> number
+    floor: (v: vector) -> vector
+    magnitude: (v: vector) -> number
+    max: (a: vector, b: vector) -> vector
+    min: (a: vector, b: vector) -> vector
+    normalized: (v: vector) -> vector
+end
+
+declare vector: vector_lib
 
 declare buffer: {
     create: (size: number) -> buffer,
@@ -259,26 +276,43 @@ declare class vector
     x: number
     y: number
     z: number
-    
+
+    function angle(self, other: vector): number
+    function ceil(self): vector
+    function cross(self, other: vector): vector
+    function dot(self, other: vector): number
+    function floor(self): vector
+    function magnitude(self): number
+    function max(self, other: vector): vector
+    function min(self, other: vector): vector
+    function normalized(self): vector
+
     function __add(self, other: vector): vector
-
     function __sub(self, other: vector): vector
-
     function __mul(self, other: vector): vector
     function __mul(self, other: number): vector
-
     function __div(self, other: vector): vector
     function __div(self, other: number): vector
 end
 
-declare vector: {
-    new: @checked (x: number?, y: number?, z: number?) -> vector,
-    
-    cross: @checked (v1: vector, v2: vector) -> vector,
-    dot: @checked (v1: vector, v2: vector) -> number,
-    magnitude: @checked (v: vector) -> number,
-    normalize: @checked (v: vector) -> vector,
-}
+declare class vector_lib
+    function __call(self, x: number?, y: number?, z: number?): vector
+
+    one: vector
+    zero: vector
+
+    angle: (a: vector, b: vector) -> number
+    ceil: (v: vector) -> vector
+    cross: (a: vector, b: vector) -> vector
+    dot: (a: vector, b: vector) -> number
+    floor: (v: vector) -> vector
+    magnitude: (v: vector) -> number
+    max: (a: vector, b: vector) -> vector
+    min: (a: vector, b: vector) -> vector
+    normalized: (v: vector) -> vector
+end
+
+declare vector: vector_lib
 
 declare bit32: {
     band: @checked (...number) -> number,

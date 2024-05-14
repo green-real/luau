@@ -489,10 +489,7 @@ Constant foldBuiltin(int bfid, const Constant* args, size_t count)
             float x = count >= 1 && args[0].type == Constant::Type_Number ? float(args[0].valueNumber) : 0.0f;
             float y = count >= 2 && args[1].type == Constant::Type_Number ? float(args[1].valueNumber) : 0.0f;
             float z = count >= 3 && args[2].type == Constant::Type_Number ? float(args[2].valueNumber) : 0.0f;
-            float w = 0.0f;
-#if LUAU_VECTOR_SIZE == 4
-            w = count >= 4 && args[3].type == Constant::Type_Number ? float(args[3].valueNumber) : 0.0f;
-#endif
+            float w = count >= 4 && args[3].type == Constant::Type_Number ? float(args[3].valueNumber) : 0.0f;
 
             return cvector(x, y, z, w);
         }
@@ -519,12 +516,18 @@ Constant foldBuiltin(int bfid, const Constant* args, size_t count)
             float x1 = args[0].valueVector[0];
             float y1 = args[0].valueVector[1];
             float z1 = args[0].valueVector[2];
+            float w1 = args[0].valueVector[3];
 
             float x2 = args[1].valueVector[0];
             float y2 = args[1].valueVector[1];
             float z2 = args[1].valueVector[2];
-
+            float w2 = args[1].valueVector[3];
+            
+#if LUAU_VECTOR_SIZE == 4
+            return cnum(x1 * x2 + y1 * y2 + z1 * z2 + w1 * w2);
+#else
             return cnum(x1 * x2 + y1 * y2 + z1 * z2);
+#endif
         }
         break;
 
@@ -534,21 +537,37 @@ Constant foldBuiltin(int bfid, const Constant* args, size_t count)
             float x = args[0].valueVector[0];
             float y = args[0].valueVector[1];
             float z = args[0].valueVector[2];
+            float w = args[0].valueVector[3];
 
+#if LUAU_VECTOR_SIZE == 4
+            return cnum(sqrtf(x * x + y * y + z * z + w * w));
+#else
             return cnum(sqrtf(x * x + y * y + z * z));
+#endif
         }
         break;
 
-    case LBF_VECTOR_NORMALIZE:
+    case LBF_VECTOR_NORMALIZED:
         if (count == 1 && args[0].type == Constant::Type_Vector)
         {
             float x = args[0].valueVector[0];
             float y = args[0].valueVector[1];
             float z = args[0].valueVector[2];
+            float w = 0.0f;
 
-            float mag = sqrtf(x * x + y * y + z * z);
+            // only assign w if the vector is 4D, since v[3] is otherwise undefined
+#if LUAU_VECTOR_SIZE == 4
+            w = args[0].valueVector[3];
+#endif
 
-            return cvector(x / mag, y / mag, z / mag, 0.0);
+            float mag = sqrtf(x * x + y * y + z * z + w * w);
+            
+            if (mag == 0.0f)
+                return cvector(0.0f, 0.0f, 0.0f, 0.0f);
+            else {
+                float invMag = 1.0f / mag;
+                return cvector(x * invMag, y * invMag, z * invMag, w * invMag);
+            } 
         }
         break;
     }

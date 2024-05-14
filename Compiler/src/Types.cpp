@@ -741,7 +741,7 @@ struct TypeMapVisitor : AstVisitor
             case LBF_VECTOR:
             case LBF_VECTOR_NEW:
             case LBF_VECTOR_CROSS:
-            case LBF_VECTOR_NORMALIZE:
+            case LBF_VECTOR_NORMALIZED:
                 recordResolvedType(node, &builtinTypes.vectorType);
                 break;
             }

@@ -222,16 +222,14 @@ static int getBuiltinFunctionId(const Builtin& builtin, const CompileOptions& op
 
     if (builtin.object == "vector")
     {
-        if (builtin.method == "new")
-            return LBF_VECTOR_NEW;
         if (builtin.method == "cross")
             return LBF_VECTOR_CROSS;
         if (builtin.method == "dot")
             return LBF_VECTOR_DOT;
         if (builtin.method == "magnitude")
             return LBF_VECTOR_MAGNITUDE;
-        if (builtin.method == "normalize")
-            return LBF_VECTOR_NORMALIZE;
+        if (builtin.method == "normalized")
+            return LBF_VECTOR_NORMALIZED;
     }
 
     if (options.vectorCtor)
@@ -247,6 +245,10 @@ static int getBuiltinFunctionId(const Builtin& builtin, const CompileOptions& op
                 return LBF_VECTOR;
         }
     }
+
+    // placed here for now to not break vector tests
+    if (builtin.isGlobal("vector"))
+        return LBF_VECTOR_NEW;
 
     return -1;
 }
@@ -470,16 +472,16 @@ BuiltinInfo getBuiltinInfo(int bfid)
         return {3, 0, BuiltinInfo::Flag_NoneSafe};
 
     case LBF_VECTOR_NEW:
-    #if LUA_VECTOR_SIZE == 4
+#if LUA_VECTOR_SIZE == 4
         return {4, 1, BuiltinInfo::Flag_NoneSafe};
-    #else
+#else
         return {3, 1, BuiltinInfo::Flag_NoneSafe};
-    #endif
+#endif
     case LBF_VECTOR_CROSS:
     case LBF_VECTOR_DOT:
         return {2, 1, BuiltinInfo::Flag_NoneSafe};
     case LBF_VECTOR_MAGNITUDE:
-    case LBF_VECTOR_NORMALIZE:
+    case LBF_VECTOR_NORMALIZED:
         return {1, 1, BuiltinInfo::Flag_NoneSafe};
     }
 

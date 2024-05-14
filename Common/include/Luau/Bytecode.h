@@ -595,7 +595,7 @@ enum LuauBuiltinFunction
     LBF_VECTOR_CROSS,
     LBF_VECTOR_DOT,
     LBF_VECTOR_MAGNITUDE,
-    LBF_VECTOR_NORMALIZE,
+    LBF_VECTOR_NORMALIZED,
 };
 
 // Capture type, used in LOP_CAPTURE

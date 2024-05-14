@@ -222,6 +222,121 @@ TEST_CASE_FIXTURE(Fixture, "declaring_generic_functions")
     CHECK_EQ(toString(requireType("h")), "<a, b>(a, b) -> (b, a)");
 }
 
+TEST_CASE_FIXTURE(Fixture, "vector_test_definition")
+{
+    loadDefinition(R"(
+        -- vector object
+        declare class vector
+            x: number
+            y: number
+            z: number
+
+            function angle(self, other: vector): number
+            function ceil(self): vector
+            function cross(self, other: vector): vector
+            function dot(self, other: vector): number
+            function floor(self): vector
+            function magnitude(self): number
+            function max(self, other: vector): vector
+            function min(self, other: vector): vector
+            function normalized(self): vector
+
+            function __add(self, other: vector): vector
+            function __sub(self, other: vector): vector
+            function __mul(self, other: vector): vector
+            function __mul(self, other: number): vector
+            function __div(self, other: vector): vector
+            function __div(self, other: number): vector
+        end
+
+        -- vector library class to add __call to it
+        declare class vector_lib
+            one: vector
+            zero: vector
+
+            angle: (a: vector, b: vector) -> number
+            ceil: (v: vector) -> vector
+            cross: (a: vector, b: vector) -> vector
+            dot: (a: vector, b: vector) -> number
+            floor: (v: vector) -> vector
+            magnitude: (v: vector) -> number
+            max: (a: vector, b: vector) -> vector
+            min: (a: vector, b: vector) -> vector
+            normalized: (v: vector) -> vector
+
+            function __call(self, x: number?, y: number?, z: number?): vector
+        end
+
+        -- vector library
+        declare vector: vector_lib
+    )");
+
+    CheckResult result = check(R"(
+        local v = vector(1, 2, 3)
+        local one = vector.one
+        local zero = vector.zero
+
+        local angle = vector.angle(v, one)
+        local ceil = vector.ceil(v)
+        local cross = vector.cross(v, one)
+        local dot = vector.dot(v, one)
+        local floor = vector.floor(v)
+        local magnitude = vector.magnitude(v)
+        local max = vector.max(v, one)
+        local min = vector.min(v, one)
+        local normalized = vector.normalized(v)
+
+        local angle2 = v:angle(one)
+        local ceil2 = v:ceil()
+        local cross2 = v:cross(one)
+        local dot2 = v:dot(one)
+        local floor2 = v:floor()
+        local magnitude2 = v:magnitude()
+        local max2 = v:max(one)
+        local min2 = v:min(one)
+        local normalized2 = v:normalized()
+
+        local add = v + one
+        local sub = v - one
+        local mul = v * one
+        local mul2 = v * 2
+        local div = v / one
+        local div2 = v / 2
+    )");
+
+    LUAU_REQUIRE_NO_ERRORS(result);
+    CHECK_EQ(toString(requireType("v")), "vector");
+    CHECK_EQ(toString(requireType("one")), "vector");
+    CHECK_EQ(toString(requireType("zero")), "vector");
+
+    CHECK_EQ(toString(requireType("angle")), "number");
+    CHECK_EQ(toString(requireType("ceil")), "vector");
+    CHECK_EQ(toString(requireType("cross")), "vector");
+    CHECK_EQ(toString(requireType("dot")), "number");
+    CHECK_EQ(toString(requireType("floor")), "vector");
+    CHECK_EQ(toString(requireType("magnitude")), "number");
+    CHECK_EQ(toString(requireType("max")), "vector");
+    CHECK_EQ(toString(requireType("min")), "vector");
+    CHECK_EQ(toString(requireType("normalized")), "vector");
+
+    CHECK_EQ(toString(requireType("angle2")), "number");
+    CHECK_EQ(toString(requireType("ceil2")), "vector");
+    CHECK_EQ(toString(requireType("cross2")), "vector");
+    CHECK_EQ(toString(requireType("dot2")), "number");
+    CHECK_EQ(toString(requireType("floor2")), "vector");
+    CHECK_EQ(toString(requireType("magnitude2")), "number");
+    CHECK_EQ(toString(requireType("max2")), "vector");
+    CHECK_EQ(toString(requireType("min2")), "vector");
+    CHECK_EQ(toString(requireType("normalized2")), "vector");
+
+    CHECK_EQ(toString(requireType("add")), "vector");
+    CHECK_EQ(toString(requireType("sub")), "vector");
+    CHECK_EQ(toString(requireType("mul")), "vector");
+    CHECK_EQ(toString(requireType("mul2")), "vector");
+    CHECK_EQ(toString(requireType("div")), "vector");
+    CHECK_EQ(toString(requireType("div2")), "vector");
+}
+
 TEST_CASE_FIXTURE(Fixture, "class_definition_function_prop")
 {
     loadDefinition(R"(

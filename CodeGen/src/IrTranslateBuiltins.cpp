@@ -937,14 +937,25 @@ static BuiltinImplResult translateBuiltinVectorNormalize(
 
     IrOp mag = build.inst(IrCmd::SQRT_NUM, sum);
 
-    // Note: could be replace with NUM_TO_VEC(mag), DIV_VEC(ra, mag) for better performance(?)
-    IrOp inv = build.inst(IrCmd::DIV_NUM, build.constDouble(1.0), mag);
+    IrOp falsey = build.block(IrBlockKind::Internal);
+    IrOp truthy = build.block(IrBlockKind::Internal);
+    IrOp exit = build.block(IrBlockKind::Internal);
+    build.inst(IrCmd::JUMP_CMP_NUM, mag, build.constDouble(0.0), build.cond(IrCondition::Equal), falsey, truthy);
 
-    IrOp xr = build.inst(IrCmd::MUL_NUM, x, inv);
-    IrOp yr = build.inst(IrCmd::MUL_NUM, y, inv);
-    IrOp zr = build.inst(IrCmd::MUL_NUM, z, inv);
-
+    build.beginBlock(falsey);
+    // Note: could be replace with DIV_VEC(ra, NUM_TO_VEC(magInv)) for better performance(?)
+    IrOp magInv = build.inst(IrCmd::DIV_NUM, build.constDouble(1.0), mag);
+    IrOp xr = build.inst(IrCmd::MUL_NUM, x, magInv);
+    IrOp yr = build.inst(IrCmd::MUL_NUM, y, magInv);
+    IrOp zr = build.inst(IrCmd::MUL_NUM, z, magInv);
     build.inst(IrCmd::STORE_VECTOR, build.vmReg(ra), xr, yr, zr);
+    build.inst(IrCmd::JUMP, exit);
+
+    build.beginBlock(truthy);
+    build.inst(IrCmd::STORE_VECTOR, build.vmReg(ra), build.constDouble(0.0), build.constDouble(0.0), build.constDouble(0.0));
+    build.inst(IrCmd::JUMP, exit);
+
+    build.beginBlock(exit);
     build.inst(IrCmd::STORE_TAG, build.vmReg(ra), build.constTag(LUA_TVECTOR));
 
     return {BuiltinImplType::Full, 1};
@@ -1080,7 +1091,7 @@ BuiltinImplResult translateBuiltin(IrBuilder& build, int bfid, int ra, int arg, 
         return translateBuiltinVectorDot(build, nparams, ra, arg, args, nresults, pcpos);
     case LBF_VECTOR_MAGNITUDE:
         return translateBuiltinVectorMagnitude(build, nparams, ra, arg, args, nresults, pcpos);
-    case LBF_VECTOR_NORMALIZE:
+    case LBF_VECTOR_NORMALIZED:
         return translateBuiltinVectorNormalize(build, nparams, ra, arg, args, nresults, pcpos);
     default:
         return {BuiltinImplType::None, -1};

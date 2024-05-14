@@ -1441,26 +1441,26 @@ static int luauF_vecnew(lua_State* L, StkId res, TValue* arg0, int nresults, Stk
 {
     if (nparams >= 1 && nresults <= 1)
     {
-        float x, y, z, w = 0.0f;
+        float x = 0.0f, y = 0.0f, z = 0.0f, w = 0.0f;
 
         if (ttisnumber(arg0))
-            x = float(arg0->value.n);
+            x = float(nvalue(arg0));
         else if (!ttisnil(arg0))
             return -1;
 
         if (nparams >= 2 && ttisnumber(args))
-            y = float((args)->value.n);
+            y = float(nvalue(args));
         else if (nparams >= 2 && !ttisnil(args))
             return -1;
 
         if (nparams >= 3 && ttisnumber(args + 1))
-            z = float((args + 1)->value.n);
+            z = float(nvalue(args + 1));
         else if (nparams >= 3 && !ttisnil(args + 1))
             return -1;
 
 #if LUA_VECTOR_SIZE == 4
         if (nparams >= 4 && ttisnumber(args + 2))
-            w = float((args + 2)->value.n);
+            w = float(nvalue(args + 2));
         else if (nparams >= 4 && !ttisnil(args + 2))
             return -1;
 #endif
@@ -1475,14 +1475,11 @@ static int luauF_veccross(lua_State* L, StkId res, TValue* arg0, int nresults, S
 {
     if (nparams == 2 && nresults <= 1 && ttisvector(arg0) && ttisvector(args))
     {   
-
-        float x1 = arg0->value.v[0];
-        float y1 = arg0->value.v[1];
-        float z1 = arg0->value.v[2];
-
-        float x2 = args->value.v[0];
-        float y2 = args->value.v[1];
-        float z2 = args->value.v[2];
+        const float *v1 = vvalue(arg0);
+        const float *v2 = vvalue(args);      
+    
+        float x1 = v1[0], y1 = v1[1], z1 = v1[2];
+        float x2 = v2[0], y2 = v2[1], z2 = v2[2];
 
         setvvalue(res, y1 * z2 - z1 * y2, z1 * x2 - x1 * z2, x1 * y2 - y1 * x2, 0.0f);
         return 1;
@@ -1495,14 +1492,11 @@ static int luauF_vecdot(lua_State* L, StkId res, TValue* arg0, int nresults, Stk
 {
     if (nparams == 2 && nresults <= 1 && ttisvector(arg0) && ttisvector(args))
     {
-
-        float x1 = arg0->value.v[0];
-        float y1 = arg0->value.v[1];
-        float z1 = arg0->value.v[2];
-
-        float x2 = args->value.v[0];
-        float y2 = args->value.v[1];
-        float z2 = args->value.v[2];
+        const float *v1 = vvalue(arg0);
+        const float *v2 = vvalue(args);      
+    
+        float x1 = v1[0], y1 = v1[1], z1 = v1[2];
+        float x2 = v2[0], y2 = v2[1], z2 = v2[2];
 
         setnvalue(res, double(x1 * x2 + y1 * y2 + z1 * z2));
         return 1;
@@ -1515,9 +1509,9 @@ static int luauF_vecmag(lua_State* L, StkId res, TValue* arg0, int nresults, Stk
 {
     if (nresults <= 1 && ttisvector(arg0))
     {
-        float x = arg0->value.v[0];
-        float y = arg0->value.v[1];
-        float z = arg0->value.v[2];
+        const float *vv = vvalue(arg0);
+
+        float x = vv[0], y = vv[1], z = vv[2];
 
         setnvalue(res, double(sqrt(x * x + y * y + z * z)));
         return 1;
@@ -1530,14 +1524,24 @@ static int luauF_vecnorm(lua_State* L, StkId res, TValue* arg0, int nresults, St
 {
     if (nresults <= 1 && ttisvector(arg0))
     {
-        float x = arg0->value.v[0];
-        float y = arg0->value.v[1];
-        float z = arg0->value.v[2];
-        float w = arg0->value.v[3];
+        const float *vv = vvalue(arg0);
 
-        float mag = float(sqrt(x * x + y * y + z * z));
-        
-        setvvalue(res, x / mag, y / mag, z / mag, w / mag);
+        float x = vv[0], y = vv[1], z = vv[2], w = 0.0f;
+
+#if LUA_VECTOR_SIZE == 4
+        w = vv[3];
+#endif
+
+        float mag = float(sqrt(x * x + y * y + z * z + w * w));
+
+        if (mag == 0.0f) {
+            setvvalue(res, 0.0f, 0.0f, 0.0f, 0.0f);
+        }
+        else {
+            float invMag = 1.0f / mag;
+            setvvalue(res, x * invMag, y * invMag, z * invMag, w * invMag);
+        }
+
         return 1;
     }
 

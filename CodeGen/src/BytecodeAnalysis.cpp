@@ -495,7 +495,7 @@ static void applyBuiltinCall(int bfid, BytecodeTypes& types)
         types.result = LBC_TYPE_NUMBER;
         types.a = LBC_TYPE_VECTOR;
         break;
-    case LBF_VECTOR_NORMALIZE:
+    case LBF_VECTOR_NORMALIZED:
         types.result = LBC_TYPE_VECTOR;
         types.a = LBC_TYPE_VECTOR;
         break;
