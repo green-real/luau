@@ -32,6 +32,8 @@ declare class vector
     function __mul(self, other: number): vector
     function __div(self, other: vector): vector
     function __div(self, other: number): vector
+    function __idiv(self, other: vector): vector
+    function __idiv(self, other: number): vector
 
     function __unm(self): vector
 end
@@ -295,6 +297,8 @@ declare class vector
     function __mul(self, other: number): vector
     function __div(self, other: vector): vector
     function __div(self, other: number): vector
+    function __idiv(self, other: vector): vector
+    function __idiv(self, other: number): vector
 
     function __unm(self): vector
 end
