@@ -866,19 +866,16 @@ static BuiltinImplResult translateBuiltinVectorDot(IrBuilder& build, int nparams
     build.loadAndCheckTag(build.vmReg(arg), LUA_TVECTOR, build.vmExit(pcpos));
     build.loadAndCheckTag(args, LUA_TVECTOR, build.vmExit(pcpos));
 
-    IrOp x1 = build.inst(IrCmd::LOAD_FLOAT, build.vmReg(arg), build.constInt(0));
-    IrOp x2 = build.inst(IrCmd::LOAD_FLOAT, args, build.constInt(0));
-    IrOp xx = build.inst(IrCmd::MUL_NUM, x1, x2);
+    IrOp v1 = build.inst(IrCmd::LOAD_TVALUE, build.vmReg(arg));
+    IrOp v2 = build.inst(IrCmd::LOAD_TVALUE, args);
 
-    IrOp y1 = build.inst(IrCmd::LOAD_FLOAT, build.vmReg(arg), build.constInt(4));
-    IrOp y2 = build.inst(IrCmd::LOAD_FLOAT, args, build.constInt(4));
-    IrOp yy = build.inst(IrCmd::MUL_NUM, y1, y2);
+    IrOp v1v2 = build.inst(IrCmd::MUL_VEC, v1, v2);
 
-    IrOp z1 = build.inst(IrCmd::LOAD_FLOAT, build.vmReg(arg), build.constInt(8));
-    IrOp z2 = build.inst(IrCmd::LOAD_FLOAT, args, build.constInt(8));
-    IrOp zz = build.inst(IrCmd::MUL_NUM, z1, z2);
+    IrOp x = build.inst(IrCmd::LOAD_FLOAT, v1v2, build.constInt(0));
+    IrOp y = build.inst(IrCmd::LOAD_FLOAT, v1v2, build.constInt(4));
+    IrOp z = build.inst(IrCmd::LOAD_FLOAT, v1v2, build.constInt(8));
 
-    IrOp result = build.inst(IrCmd::ADD_NUM, build.inst(IrCmd::ADD_NUM, xx, yy), zz);
+    IrOp result = build.inst(IrCmd::ADD_NUM, build.inst(IrCmd::ADD_NUM, x, y), z); 
 
     build.inst(IrCmd::STORE_DOUBLE, build.vmReg(ra), result);
     build.inst(IrCmd::STORE_TAG, build.vmReg(ra), build.constTag(LUA_TNUMBER));
@@ -895,16 +892,14 @@ static BuiltinImplResult translateBuiltinVectorMagnitude(IrBuilder& build, int n
 
     build.loadAndCheckTag(build.vmReg(arg), LUA_TVECTOR, build.vmExit(pcpos));
 
-    IrOp x = build.inst(IrCmd::LOAD_FLOAT, build.vmReg(arg), build.constInt(0));
-    IrOp x2 = build.inst(IrCmd::MUL_NUM, x, x);
+    IrOp v = build.inst(IrCmd::LOAD_TVALUE, build.vmReg(arg));
+    IrOp vv = build.inst(IrCmd::MUL_VEC, v, v);
 
-    IrOp y = build.inst(IrCmd::LOAD_FLOAT, build.vmReg(arg), build.constInt(4));
-    IrOp y2 = build.inst(IrCmd::MUL_NUM, y, y);
+    IrOp x = build.inst(IrCmd::LOAD_FLOAT, vv, build.constInt(0));
+    IrOp y = build.inst(IrCmd::LOAD_FLOAT, vv, build.constInt(4));
+    IrOp z = build.inst(IrCmd::LOAD_FLOAT, vv, build.constInt(8));
 
-    IrOp z = build.inst(IrCmd::LOAD_FLOAT, build.vmReg(arg), build.constInt(8));
-    IrOp z2 = build.inst(IrCmd::MUL_NUM, z, z);
-
-    IrOp sum = build.inst(IrCmd::ADD_NUM, build.inst(IrCmd::ADD_NUM, x2, y2), z2);
+    IrOp sum = build.inst(IrCmd::ADD_NUM, build.inst(IrCmd::ADD_NUM, x, y), z);
 
     IrOp mag = build.inst(IrCmd::SQRT_NUM, sum);
 
@@ -924,16 +919,14 @@ static BuiltinImplResult translateBuiltinVectorNormalize(
 
     build.loadAndCheckTag(build.vmReg(arg), LUA_TVECTOR, build.vmExit(pcpos));
 
-    IrOp x = build.inst(IrCmd::LOAD_FLOAT, build.vmReg(arg), build.constInt(0));
-    IrOp x2 = build.inst(IrCmd::MUL_NUM, x, x);
+    IrOp v = build.inst(IrCmd::LOAD_TVALUE, build.vmReg(arg));
+    IrOp vv = build.inst(IrCmd::MUL_VEC, v, v);
 
-    IrOp y = build.inst(IrCmd::LOAD_FLOAT, build.vmReg(arg), build.constInt(4));
-    IrOp y2 = build.inst(IrCmd::MUL_NUM, y, y);
+    IrOp x = build.inst(IrCmd::LOAD_FLOAT, vv, build.constInt(0));
+    IrOp y = build.inst(IrCmd::LOAD_FLOAT, vv, build.constInt(4));
+    IrOp z = build.inst(IrCmd::LOAD_FLOAT, vv, build.constInt(8));
 
-    IrOp z = build.inst(IrCmd::LOAD_FLOAT, build.vmReg(arg), build.constInt(8));
-    IrOp z2 = build.inst(IrCmd::MUL_NUM, z, z);
-
-    IrOp sum = build.inst(IrCmd::ADD_NUM, build.inst(IrCmd::ADD_NUM, x2, y2), z2);
+    IrOp sum = build.inst(IrCmd::ADD_NUM, build.inst(IrCmd::ADD_NUM, x, y), z);
 
     IrOp mag = build.inst(IrCmd::SQRT_NUM, sum);
 
@@ -943,20 +936,19 @@ static BuiltinImplResult translateBuiltinVectorNormalize(
     build.inst(IrCmd::JUMP_CMP_NUM, mag, build.constDouble(0.0), build.cond(IrCondition::Equal), falsey, truthy);
 
     build.beginBlock(falsey);
-    // Note: could be replace with DIV_VEC(ra, NUM_TO_VEC(magInv)) for better performance(?)
     IrOp magInv = build.inst(IrCmd::DIV_NUM, build.constDouble(1.0), mag);
-    IrOp xr = build.inst(IrCmd::MUL_NUM, x, magInv);
-    IrOp yr = build.inst(IrCmd::MUL_NUM, y, magInv);
-    IrOp zr = build.inst(IrCmd::MUL_NUM, z, magInv);
-    build.inst(IrCmd::STORE_VECTOR, build.vmReg(ra), xr, yr, zr);
+    magInv = build.inst(IrCmd::NUM_TO_VEC, magInv);
+    IrOp result = build.inst(IrCmd::MUL_VEC, v, magInv);
+    result = build.inst(IrCmd::TAG_VECTOR, result);
+    build.inst(IrCmd::STORE_TVALUE, build.vmReg(ra), result);
     build.inst(IrCmd::JUMP, exit);
 
     build.beginBlock(truthy);
     build.inst(IrCmd::STORE_VECTOR, build.vmReg(ra), build.constDouble(0.0), build.constDouble(0.0), build.constDouble(0.0));
+    build.inst(IrCmd::STORE_TAG, build.vmReg(ra), build.constTag(LUA_TVECTOR));
     build.inst(IrCmd::JUMP, exit);
 
     build.beginBlock(exit);
-    build.inst(IrCmd::STORE_TAG, build.vmReg(ra), build.constTag(LUA_TVECTOR));
 
     return {BuiltinImplType::Full, 1};
 }
@@ -1085,6 +1077,8 @@ BuiltinImplResult translateBuiltin(IrBuilder& build, int bfid, int ra, int arg, 
         return translateBuiltinBufferWrite(build, nparams, ra, arg, args, nresults, pcpos, IrCmd::BUFFER_WRITEF64, 8, IrCmd::NOP);
     case LBF_VECTOR_NEW:
         return translateBuiltinVectorNew(build, nparams, ra, arg, args, nresults, pcpos);
+
+    // TODO: vector operations shouldn't be doing float->double conversions until the end
     case LBF_VECTOR_CROSS:
         return translateBuiltinVectorCross(build, nparams, ra, arg, args, nresults, pcpos);
     case LBF_VECTOR_DOT:
