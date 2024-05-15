@@ -472,11 +472,7 @@ BuiltinInfo getBuiltinInfo(int bfid)
         return {3, 0, BuiltinInfo::Flag_NoneSafe};
 
     case LBF_VECTOR_NEW:
-#if LUA_VECTOR_SIZE == 4
-        return {4, 1, BuiltinInfo::Flag_NoneSafe};
-#else
-        return {3, 1, BuiltinInfo::Flag_NoneSafe};
-#endif
+        return {-1, 1, BuiltinInfo::Flag_NoneSafe}; // 3 or 4 parameters in some configurations
     case LBF_VECTOR_CROSS:
     case LBF_VECTOR_DOT:
         return {2, 1, BuiltinInfo::Flag_NoneSafe};
