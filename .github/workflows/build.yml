@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - 'master'
+      - 'vec-lib'
     paths-ignore:
       - 'docs/**'
       - 'papers/**'
