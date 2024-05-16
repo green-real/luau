@@ -92,7 +92,6 @@ static int vector_magnitude(lua_State* L)
     
     float x = v[0], y = v[1], z = v[2], w = 0.0f;
 
-    // only assign w if the vector is 4D, since v[3] is otherwise undefined
 #if LUA_VECTOR_SIZE == 4
     w = v[3];
 #endif
@@ -142,7 +141,6 @@ static int vector_normalized(lua_State* L)
 
     float x = v[0], y = v[1], z = v[2], w = 0.0f;
 
-    // only assign w if the vector is 4D, since v[3] is otherwise undefined
 #if LUA_VECTOR_SIZE == 4
     w = v[3];
 #endif

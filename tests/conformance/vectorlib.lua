@@ -17,8 +17,6 @@ local down = vector(0, -1, 0)
 -- after the assertion below, we can assume that the constructors work correctly
 assert(type(v1) == 'vector')
 
--- test all functions, then test all methods
-
 -- vector.angle
 assert(math.abs(vector.angle(front, back) - math.pi) < 0.0000001)
 assert(math.abs(vector.angle(left, right) - math.pi) < 0.0000001)
