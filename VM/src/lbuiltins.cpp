@@ -1441,7 +1441,7 @@ static int luauF_vecnew(lua_State* L, StkId res, TValue* arg0, int nresults, Stk
 {
     if (nparams >= 1 && nresults <= 1)
     {
-        float x = 0.0f, y = 0.0f, z = 0.0f, w = 0.0f;
+        float x = 0.0f, y = 0.0f, z = 0.0f;
 
         if (ttisnumber(arg0))
             x = float(nvalue(arg0));
@@ -1459,6 +1459,7 @@ static int luauF_vecnew(lua_State* L, StkId res, TValue* arg0, int nresults, Stk
             return -1;
 
 #if LUA_VECTOR_SIZE == 4
+        float w = 0.0f;
         if (nparams >= 4 && ttisnumber(args + 2))
             w = float(nvalue(args + 2));
         else if (nparams >= 4 && !ttisnil(args + 2))
