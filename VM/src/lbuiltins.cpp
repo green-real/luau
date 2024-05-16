@@ -1548,10 +1548,12 @@ static int luauF_vecnorm(lua_State* L, StkId res, TValue* arg0, int nresults, St
         float w = v[3];
         float mag = sqrtf(x * x + y * y + z * z + w * w);
 #else
+        float w = 0.0f;
         float mag = sqrtf(x * x + y * y + z * z);
 #endif
 
         float invMag = 1.0f / mag;
+        
         setvvalue(res, x * invMag, y * invMag, z * invMag, w * invMag);
         return 1;
     }
