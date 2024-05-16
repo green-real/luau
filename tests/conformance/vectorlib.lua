@@ -64,7 +64,7 @@ assert(vector.min(vector(1, 2, 3), vector(3, 2, 1)) == vector(1, 2, 1))
 
 -- vector.normalized
 assert(vector.normalized(vector(2, 10, 11)) == vector(2, 10, 11) / 15)
-assert(vector.normalized(zero) == zero)
+assert(vector.normalized(zero) ~= vector.normalized(zero))
 
 -- vector methods
 assert(v1:angle(v2) == vector.angle(v1, v2))

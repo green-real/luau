@@ -936,26 +936,14 @@ static BuiltinImplResult translateBuiltinVectorNormalize(
 
     IrOp sum = build.inst(IrCmd::ADD_NUM, build.inst(IrCmd::ADD_NUM, x2, y2), z2);
 
-    IrOp proceed = build.block(IrBlockKind::Internal);
-    IrOp usezero = build.block(IrBlockKind::Internal);
-    IrOp exit = build.block(IrBlockKind::Internal);
-    build.inst(IrCmd::JUMP_CMP_NUM, sum, build.constDouble(0.0), build.cond(IrCondition::NotEqual), proceed, usezero);
-
-    build.beginBlock(proceed);
-    // Note: could be replace with DIV_VEC(ra, NUM_TO_VEC(magInv)) for better performance(?)
     IrOp mag = build.inst(IrCmd::SQRT_NUM, sum);
     IrOp magInv = build.inst(IrCmd::DIV_NUM, build.constDouble(1.0), mag);
+
     IrOp xr = build.inst(IrCmd::MUL_NUM, x, magInv);
     IrOp yr = build.inst(IrCmd::MUL_NUM, y, magInv);
     IrOp zr = build.inst(IrCmd::MUL_NUM, z, magInv);
+    
     build.inst(IrCmd::STORE_VECTOR, build.vmReg(ra), xr, yr, zr);
-    build.inst(IrCmd::JUMP, exit);
-
-    build.beginBlock(usezero);
-    build.inst(IrCmd::STORE_VECTOR, build.vmReg(ra), build.constDouble(0.0), build.constDouble(0.0), build.constDouble(0.0));
-    build.inst(IrCmd::JUMP, exit);
-
-    build.beginBlock(exit);
     build.inst(IrCmd::STORE_TAG, build.vmReg(ra), build.constTag(LUA_TVECTOR));
 
     return {BuiltinImplType::Full, 1};

@@ -148,16 +148,9 @@ static int vector_normalized(lua_State* L)
 #endif
 
     float mag = sqrtf(x * x + y * y + z * z + w * w);
-    
-    if (mag == 0.0f)
-    {
-        pushvector(L, 0.0f, 0.0f, 0.0f, 0.0f);
-    }
-    else
-    {   
-        float invMag = 1.0f / mag;
-        pushvector(L, x * invMag, y * invMag, z * invMag, w * invMag);
-    }
+    float invMag = 1.0f / mag;
+
+    pushvector(L, x * invMag, y * invMag, z * invMag, w * invMag);
 
     return 1;
 }
