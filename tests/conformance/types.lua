@@ -22,7 +22,15 @@ function verify(real, rtti, path)
 
 	if real and rtti then
 		if type(real) == "table" then
-			assert(type(rtti) == "table", path .. " is not a table in type information")
+			if type(rtti) ~= "table" then
+				-- special case for callable tables (vector lib)
+				if rtti == "function" then
+					assert(type(getmetatable(real).__call) == "function", path .. " is a table but not callable")
+					return
+				else
+					assert(false, path .. " is not a table in type information")
+				end
+			end
 
 			local keys = {}
 
