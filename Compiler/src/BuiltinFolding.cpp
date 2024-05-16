@@ -516,14 +516,14 @@ Constant foldBuiltin(int bfid, const Constant* args, size_t count)
             float x1 = args[0].valueVector[0];
             float y1 = args[0].valueVector[1];
             float z1 = args[0].valueVector[2];
-            float w1 = args[0].valueVector[3];
 
             float x2 = args[1].valueVector[0];
             float y2 = args[1].valueVector[1];
             float z2 = args[1].valueVector[2];
-            float w2 = args[1].valueVector[3];
             
-#if LUAU_VECTOR_SIZE == 4
+#if LUA_VECTOR_SIZE == 4
+            float w1 = args[0].valueVector[3];
+            float w2 = args[1].valueVector[3];
             return cnum(x1 * x2 + y1 * y2 + z1 * z2 + w1 * w2);
 #else
             return cnum(x1 * x2 + y1 * y2 + z1 * z2);
@@ -537,9 +537,9 @@ Constant foldBuiltin(int bfid, const Constant* args, size_t count)
             float x = args[0].valueVector[0];
             float y = args[0].valueVector[1];
             float z = args[0].valueVector[2];
+            
+#if LUA_VECTOR_SIZE == 4
             float w = args[0].valueVector[3];
-
-#if LUAU_VECTOR_SIZE == 4
             return cnum(sqrtf(x * x + y * y + z * z + w * w));
 #else
             return cnum(sqrtf(x * x + y * y + z * z));
@@ -556,7 +556,7 @@ Constant foldBuiltin(int bfid, const Constant* args, size_t count)
             float w = 0.0f;
 
             // only assign w if the vector is 4D, since v[3] is otherwise undefined
-#if LUAU_VECTOR_SIZE == 4
+#if LUA_VECTOR_SIZE == 4
             w = args[0].valueVector[3];
 #endif
 
