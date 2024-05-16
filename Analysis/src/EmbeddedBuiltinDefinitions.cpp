@@ -301,24 +301,22 @@ declare class vector
     function __unm(self): vector
 end
 
-declare class vector_lib
-    function __call(self, x: number?, y: number?, z: number?): vector
+declare vector: {
+    one: vector,
+    zero: vector,
 
-    one: vector
-    zero: vector
+    angle: (a: vector, b: vector) -> number,
+    ceil: (v: vector) -> vector,
+    cross: (a: vector, b: vector) -> vector,
+    dot: (a: vector, b: vector) -> number,
+    floor: (v: vector) -> vector,
+    magnitude: (v: vector) -> number,
+    max: (a: vector, b: vector) -> vector,
+    min: (a: vector, b: vector) -> vector,
+    normalized: (v: vector) -> vector,
+}
 
-    angle: (a: vector, b: vector) -> number
-    ceil: (v: vector) -> vector
-    cross: (a: vector, b: vector) -> vector
-    dot: (a: vector, b: vector) -> number
-    floor: (v: vector) -> vector
-    magnitude: (v: vector) -> number
-    max: (a: vector, b: vector) -> vector
-    min: (a: vector, b: vector) -> vector
-    normalized: (v: vector) -> vector
-end
-
-declare vector: vector_lib
+declare function vector(x: number?, y: number?, z: number?): vector
 
 declare bit32: {
     band: @checked (...number) -> number,
