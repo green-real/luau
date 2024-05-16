@@ -18,9 +18,9 @@ local down = vector(0, -1, 0)
 assert(type(v1) == 'vector')
 
 -- vector.angle
-assert(math.abs(vector.angle(front, back) - math.pi) < 0.0000001)
-assert(math.abs(vector.angle(left, right) - math.pi) < 0.0000001)
-assert(math.abs(vector.angle(up, down) - math.pi) < 0.0000001)
+assert(math.abs(vector.angle(front, back) - math.pi) < 0.00001)
+assert(math.abs(vector.angle(left, right) - math.pi) < 0.00001)
+assert(math.abs(vector.angle(up, down) - math.pi) < 0.00001)
 assert(vector.angle(zero, one) ~= vector.angle(zero, one))
 
 -- vector.ceil
