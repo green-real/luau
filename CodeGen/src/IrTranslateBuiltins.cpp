@@ -866,7 +866,6 @@ static BuiltinImplResult translateBuiltinVectorDot(IrBuilder& build, int nparams
     build.loadAndCheckTag(build.vmReg(arg), LUA_TVECTOR, build.vmExit(pcpos));
     build.loadAndCheckTag(args, LUA_TVECTOR, build.vmExit(pcpos));
 
-    // would be great if we could use MUL_VEC instead
     IrOp x1 = build.inst(IrCmd::LOAD_FLOAT, build.vmReg(arg), build.constInt(0));
     IrOp x2 = build.inst(IrCmd::LOAD_FLOAT, args, build.constInt(0));
     IrOp xx = build.inst(IrCmd::MUL_NUM, x1, x2);
@@ -875,11 +874,13 @@ static BuiltinImplResult translateBuiltinVectorDot(IrBuilder& build, int nparams
     IrOp y2 = build.inst(IrCmd::LOAD_FLOAT, args, build.constInt(4));
     IrOp yy = build.inst(IrCmd::MUL_NUM, y1, y2);
 
+    IrOp xy = build.inst(IrCmd::ADD_NUM, xx, yy);
+
     IrOp z1 = build.inst(IrCmd::LOAD_FLOAT, build.vmReg(arg), build.constInt(8));
     IrOp z2 = build.inst(IrCmd::LOAD_FLOAT, args, build.constInt(8));
     IrOp zz = build.inst(IrCmd::MUL_NUM, z1, z2);
 
-    IrOp result = build.inst(IrCmd::ADD_NUM, build.inst(IrCmd::ADD_NUM, xx, yy), zz);
+    IrOp result = build.inst(IrCmd::ADD_NUM, xy, zz);
 
     build.inst(IrCmd::STORE_DOUBLE, build.vmReg(ra), result);
     build.inst(IrCmd::STORE_TAG, build.vmReg(ra), build.constTag(LUA_TNUMBER));
@@ -897,15 +898,15 @@ static BuiltinImplResult translateBuiltinVectorMagnitude(IrBuilder& build, int n
     build.loadAndCheckTag(build.vmReg(arg), LUA_TVECTOR, build.vmExit(pcpos));
 
     IrOp x = build.inst(IrCmd::LOAD_FLOAT, build.vmReg(arg), build.constInt(0));
-    IrOp x2 = build.inst(IrCmd::MUL_NUM, x, x);
+    IrOp xx = build.inst(IrCmd::MUL_NUM, x, x);
 
     IrOp y = build.inst(IrCmd::LOAD_FLOAT, build.vmReg(arg), build.constInt(4));
-    IrOp y2 = build.inst(IrCmd::MUL_NUM, y, y);
+    IrOp yy = build.inst(IrCmd::MUL_NUM, y, y);
 
     IrOp z = build.inst(IrCmd::LOAD_FLOAT, build.vmReg(arg), build.constInt(8));
-    IrOp z2 = build.inst(IrCmd::MUL_NUM, z, z);
+    IrOp zz = build.inst(IrCmd::MUL_NUM, z, z);
 
-    IrOp sum = build.inst(IrCmd::ADD_NUM, build.inst(IrCmd::ADD_NUM, x2, y2), z2);
+    IrOp sum = build.inst(IrCmd::ADD_NUM, build.inst(IrCmd::ADD_NUM, xx, yy), zz);
 
     IrOp mag = build.inst(IrCmd::SQRT_NUM, sum);
 
@@ -915,7 +916,7 @@ static BuiltinImplResult translateBuiltinVectorMagnitude(IrBuilder& build, int n
     return {BuiltinImplType::Full, 1};
 }
 
-static BuiltinImplResult translateBuiltinVectorNormalize(
+static BuiltinImplResult translateBuiltinVectorNormalized(
     IrBuilder& build, int nparams, int ra, int arg, IrOp args, int nresults, int pcpos)
 {
     if (nparams != 1 || nresults > 1)
@@ -937,14 +938,13 @@ static BuiltinImplResult translateBuiltinVectorNormalize(
     IrOp sum = build.inst(IrCmd::ADD_NUM, build.inst(IrCmd::ADD_NUM, x2, y2), z2);
 
     IrOp mag = build.inst(IrCmd::SQRT_NUM, sum);
-    IrOp magInv = build.inst(IrCmd::DIV_NUM, build.constDouble(1.0), mag);
+    mag = build.inst(IrCmd::NUM_TO_VEC, mag);
 
-    IrOp xr = build.inst(IrCmd::MUL_NUM, x, magInv);
-    IrOp yr = build.inst(IrCmd::MUL_NUM, y, magInv);
-    IrOp zr = build.inst(IrCmd::MUL_NUM, z, magInv);
-    
-    build.inst(IrCmd::STORE_VECTOR, build.vmReg(ra), xr, yr, zr);
-    build.inst(IrCmd::STORE_TAG, build.vmReg(ra), build.constTag(LUA_TVECTOR));
+    IrOp v = build.inst(IrCmd::LOAD_TVALUE, build.vmReg(arg), build.constInt(0), build.constTag(LUA_TVECTOR));
+    IrOp norm = build.inst(IrCmd::DIV_VEC, v, mag);
+
+    IrOp result = build.inst(IrCmd::TAG_VECTOR, norm);
+    build.inst(IrCmd::STORE_TVALUE, build.vmReg(ra), result);
 
     return {BuiltinImplType::Full, 1};
 }
@@ -1080,7 +1080,7 @@ BuiltinImplResult translateBuiltin(IrBuilder& build, int bfid, int ra, int arg, 
     case LBF_VECTOR_MAGNITUDE:
         return translateBuiltinVectorMagnitude(build, nparams, ra, arg, args, nresults, pcpos);
     case LBF_VECTOR_NORMALIZED:
-        return translateBuiltinVectorNormalize(build, nparams, ra, arg, args, nresults, pcpos);
+        return translateBuiltinVectorNormalized(build, nparams, ra, arg, args, nresults, pcpos);
     default:
         return {BuiltinImplType::None, -1};
     }

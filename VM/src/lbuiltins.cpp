@@ -1496,10 +1496,18 @@ static int luauF_vecdot(lua_State* L, StkId res, TValue* arg0, int nresults, Stk
         const float *v1 = vvalue(arg0);
         const float *v2 = vvalue(args);      
     
-        float x1 = v1[0], y1 = v1[1], z1 = v1[2];
-        float x2 = v2[0], y2 = v2[1], z2 = v2[2];
+        float x1x2 = v1[0] * v2[0];
+        float y1y2 = v1[1] * v2[1];
+        float z1z2 = v1[2] * v2[2];
 
-        setnvalue(res, double(x1 * x2 + y1 * y2 + z1 * z2));
+#if LUA_VECTOR_SIZE == 4
+        float w1w2 = v1[3] * v2[3];
+        float result = x1x2 + y1y2 + z1z2 + w1w2;
+#else
+        float result = x1x2 + y1y2 + z1z2;
+#endif
+
+        setnvalue(res, double(result));
         return 1;
     }
 
@@ -1510,11 +1518,18 @@ static int luauF_vecmag(lua_State* L, StkId res, TValue* arg0, int nresults, Stk
 {
     if (nresults <= 1 && ttisvector(arg0))
     {
-        const float *vv = vvalue(arg0);
+        const float *v = vvalue(arg0);
 
-        float x = vv[0], y = vv[1], z = vv[2];
+        float x = v[0], y = v[1], z = v[2];
 
-        setnvalue(res, double(sqrt(x * x + y * y + z * z)));
+#if LUA_VECTOR_SIZE == 4
+        float w = v[3];
+        float mag = sqrtf(x * x + y * y + z * z + w * w);
+#else
+        float mag = sqrtf(x * x + y * y + z * z);
+#endif
+
+        setnvalue(res, double(mag));
         return 1;
     }
 
@@ -1525,19 +1540,19 @@ static int luauF_vecnorm(lua_State* L, StkId res, TValue* arg0, int nresults, St
 {
     if (nresults <= 1 && ttisvector(arg0))
     {
-        const float *vv = vvalue(arg0);
+        const float *v = vvalue(arg0);
 
-        float x = vv[0], y = vv[1], z = vv[2], w = 0.0f;
+        float x = v[0], y = v[1], z = v[2];
 
 #if LUA_VECTOR_SIZE == 4
-        w = vv[3];
+        float w = v[3];
+        float mag = sqrtf(x * x + y * y + z * z + w * w);
+#else
+        float mag = sqrtf(x * x + y * y + z * z);
 #endif
 
-        float mag = float(sqrt(x * x + y * y + z * z + w * w));
         float invMag = 1.0f / mag;
-        
         setvvalue(res, x * invMag, y * invMag, z * invMag, w * invMag);
-
         return 1;
     }
 
