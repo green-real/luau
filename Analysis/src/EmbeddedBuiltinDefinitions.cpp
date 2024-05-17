@@ -2,7 +2,6 @@
 #include "Luau/BuiltinDefinitions.h"
 
 LUAU_FASTFLAGVARIABLE(LuauCheckedEmbeddedDefinitions2, false);
-LUAU_FASTFLAG(LuauCheckedFunctionSyntax);
 
 // TODO: have vector() allow an extra argument if LUA_VECTOR_SIZE == 4
 
@@ -542,7 +541,7 @@ std::string getBuiltinDefinitionSource()
     std::string result = kBuiltinDefinitionLuaSrc;
 
     // Annotates each non generic function as checked
-    if (FFlag::LuauCheckedEmbeddedDefinitions2 && FFlag::LuauCheckedFunctionSyntax)
+    if (FFlag::LuauCheckedEmbeddedDefinitions2)
         result = kBuiltinDefinitionLuaSrcChecked;
 
     return result;
