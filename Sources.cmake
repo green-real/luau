@@ -131,6 +131,7 @@ target_sources(Luau.CodeGen PRIVATE
     CodeGen/include/Luau/LoweringStats.h
     CodeGen/include/Luau/NativeProtoExecData.h
     CodeGen/include/Luau/OperandX64.h
+    CodeGen/include/Luau/OptimizeBufferOffsets.h
     CodeGen/include/Luau/OptimizeConstProp.h
     CodeGen/include/Luau/OptimizeDeadStore.h
     CodeGen/include/Luau/OptimizeFinalX64.h
@@ -172,6 +173,7 @@ target_sources(Luau.CodeGen PRIVATE
     CodeGen/src/lcodegen.cpp
     CodeGen/src/NativeProtoExecData.cpp
     CodeGen/src/NativeState.cpp
+    CodeGen/src/OptimizeBufferOffsets.cpp
     CodeGen/src/OptimizeConstProp.cpp
     CodeGen/src/OptimizeDeadStore.cpp
     CodeGen/src/OptimizeFinalX64.cpp

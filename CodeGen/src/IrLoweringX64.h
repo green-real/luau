@@ -61,7 +61,7 @@ struct IrLoweringX64
     OperandX64 memRegInt64Op(IrOp op);
     OperandX64 memRegTagOp(IrOp op);
     RegisterX64 regOp(IrOp op);
-    OperandX64 bufferAddrOp(IrOp bufferOp, IrOp indexOp, uint8_t tag);
+    OperandX64 bufferAddrOp(IrInst& inst);
     RegisterX64 vecOp(IrOp op, ScopedRegX64& tmp);
 
     IrConst constOp(IrOp op) const;

@@ -26,6 +26,7 @@ LUAU_FASTFLAG(LuauCallFeedback)
 LUAU_FASTFLAG(LuauCodegenA64ExitUseCheck)
 LUAU_FASTFLAG(LuauBackedgeHeapCheck)
 LUAU_FASTFLAG(LuauCodegenConstVectorBufferRead)
+LUAU_FASTFLAG(LuauCodegenBufferOffsetFold)
 
 #define ensureVectorSize3() \
     if constexpr (LUA_VECTOR_SIZE != 3) \
@@ -151,6 +152,14 @@ public:
 
     Luau::CodeGen::AssemblyOptions assemblyOptions = {};
 
+    // Both targets are always lowered, but only one text is compared. Set this to compare the a64 one, for the
+    // cases where the two targets deliberately produce different IR.
+    bool compareA64 = false;
+
+    // Every buffer access expectation in this file is written with the offset fold applied, so it is pinned for the
+    // whole fixture rather than repeated on each of the cases that shows a folded access.
+    ScopedFastFlag bufferOffsetFold{FFlag::LuauCodegenBufferOffsetFold, true};
+
     void initializeCodegen(lua_State* L)
     {
         if (Luau::CodeGen::isSupported())
@@ -219,13 +228,14 @@ public:
 
             std::string result = Luau::CodeGen::getAssembly(L, -1, assemblyOptions, nullptr);
 
-            if (Luau::CodeGen::isSupported())
-            {
-                // Checking that other target lower correctly as well
-                assemblyOptions.target = Luau::CodeGen::AssemblyOptions::Target::A64;
+            // Checking that other target lower correctly as well. An explicit target builds its own assembler with a
+            // fixed feature set and never consults the host, same as the x64 call above, so this needs no guard.
+            assemblyOptions.target = Luau::CodeGen::AssemblyOptions::Target::A64;
 
-                Luau::CodeGen::getAssembly(L, -1, assemblyOptions, nullptr);
-            }
+            std::string resultA64 = Luau::CodeGen::getAssembly(L, -1, assemblyOptions, nullptr);
+
+            if (compareA64)
+                result = resultA64;
 
             if (clipToFirstReturn)
             {
@@ -5250,12 +5260,10 @@ bb_bytecode_1:
   CHECK_BUFFER_LEN %11, %13, 0i, 12i, %12, exit(2)
   %15 = BUFFER_READI32 %11, %13, tbuffer
   %16 = INT_TO_NUM %15
-  %33 = ADD_INT %13, 4i
-  %35 = BUFFER_READI32 %11, %33, tbuffer
+  %35 = BUFFER_READI32 %11, %13, tbuffer, 4i
   %36 = INT_TO_NUM %35
   %46 = ADD_NUM %16, %36
-  %62 = ADD_INT %13, 8i
-  %64 = BUFFER_READI32 %11, %62, tbuffer
+  %64 = BUFFER_READI32 %11, %13, tbuffer, 8i
   %65 = INT_TO_NUM %64
   %75 = ADD_NUM %46, %65
   STORE_DOUBLE R2, %75
@@ -5292,12 +5300,10 @@ bb_bytecode_1:
    ; exit sync: R6, {%9}
   %21 = BUFFER_READI32 %17, %19, tbuffer
   %22 = INT_TO_NUM %21
-  %39 = ADD_INT %19, -4i
-  %41 = BUFFER_READI32 %17, %39, tbuffer
+  %41 = BUFFER_READI32 %17, %19, tbuffer, -4i
   %42 = INT_TO_NUM %41
   %52 = ADD_NUM %22, %42
-  %68 = ADD_INT %19, -8i
-  %70 = BUFFER_READI32 %17, %68, tbuffer
+  %70 = BUFFER_READI32 %17, %19, tbuffer, -8i
   %71 = INT_TO_NUM %70
   %81 = ADD_NUM %52, %71
   STORE_DOUBLE R2, %81
@@ -5339,12 +5345,10 @@ bb_bytecode_1:
    ; exit sync: R8, R3, {%18}
   %37 = BUFFER_READF32 %33, %35, tbuffer
   %38 = FLOAT_TO_NUM %37
-  %55 = ADD_INT %35, 4i
-  %57 = BUFFER_READF32 %33, %55, tbuffer
+  %57 = BUFFER_READF32 %33, %35, tbuffer, 4i
   %58 = FLOAT_TO_NUM %57
   %68 = MUL_NUM %38, %58
-  %84 = ADD_INT %35, 8i
-  %86 = BUFFER_READF32 %33, %84, tbuffer
+  %86 = BUFFER_READF32 %33, %35, tbuffer, 8i
   %87 = FLOAT_TO_NUM %86
   %97 = MUL_NUM %68, %87
   STORE_DOUBLE R4, %97
@@ -5416,12 +5420,10 @@ bb_bytecode_2:
   CHECK_BUFFER_LEN %42, %44, 0i, 12i, %43, exit(12)
   %46 = BUFFER_READF32 %42, %44, tbuffer
   %47 = FLOAT_TO_NUM %46
-  %64 = ADD_INT %44, 4i
-  %66 = BUFFER_READF32 %42, %64, tbuffer
+  %66 = BUFFER_READF32 %42, %44, tbuffer, 4i
   %67 = FLOAT_TO_NUM %66
   %77 = MUL_NUM %47, %67
-  %93 = ADD_INT %44, 8i
-  %95 = BUFFER_READF32 %42, %93, tbuffer
+  %95 = BUFFER_READF32 %42, %44, tbuffer, 8i
   %96 = FLOAT_TO_NUM %95
   %106 = MUL_NUM %77, %96
   CHECK_TAG R2, tnumber, bb_exit_10
@@ -5477,15 +5479,13 @@ bb_bytecode_1:
   %24 = NUM_TO_UINT %23
   BUFFER_WRITEI32 %19, %21, %24, tbuffer
   %30 = ADD_NUM %20, 4
-  %41 = ADD_INT %21, 4i
   %43 = LOAD_DOUBLE R3
   %44 = NUM_TO_UINT %43
-  BUFFER_WRITEI32 %19, %41, %44, tbuffer
+  BUFFER_WRITEI32 %19, %21, %44, tbuffer, 4i
   %50 = ADD_NUM %30, 4
-  %61 = ADD_INT %21, 8i
   %63 = LOAD_DOUBLE R4
   %64 = NUM_TO_UINT %63
-  BUFFER_WRITEI32 %19, %61, %64, tbuffer
+  BUFFER_WRITEI32 %19, %21, %64, tbuffer, 8i
   %70 = ADD_NUM %50, 4
   STORE_DOUBLE R1, %70
   INTERRUPT 27u
@@ -5520,12 +5520,10 @@ bb_bytecode_1:
    ; exit sync: R6, {%9}
   %21 = BUFFER_READI32 %17, %19, tbuffer
   %22 = INT_TO_NUM %21
-  %39 = ADD_INT %19, 4i
-  %41 = BUFFER_READI32 %17, %39, tbuffer
+  %41 = BUFFER_READI32 %17, %19, tbuffer, 4i
   %42 = INT_TO_NUM %41
   %52 = ADD_NUM %22, %42
-  %68 = ADD_INT %19, 8i
-  %70 = BUFFER_READI32 %17, %68, tbuffer
+  %70 = BUFFER_READI32 %17, %19, tbuffer, 8i
   %71 = INT_TO_NUM %70
   %81 = ADD_NUM %52, %71
   STORE_DOUBLE R2, %81
@@ -5560,12 +5558,10 @@ bb_bytecode_1:
   CHECK_BUFFER_LEN %11, %13, -4i, 8i, %12, exit(2)
   %15 = BUFFER_READI32 %11, %13, tbuffer
   %16 = INT_TO_NUM %15
-  %33 = ADD_INT %13, -4i
-  %35 = BUFFER_READI32 %11, %33, tbuffer
+  %35 = BUFFER_READI32 %11, %13, tbuffer, -4i
   %36 = INT_TO_NUM %35
   %46 = ADD_NUM %16, %36
-  %62 = ADD_INT %13, 4i
-  %64 = BUFFER_READI32 %11, %62, tbuffer
+  %64 = BUFFER_READI32 %11, %13, tbuffer, 4i
   %65 = INT_TO_NUM %64
   %75 = ADD_NUM %46, %65
   STORE_DOUBLE R2, %75
@@ -5618,11 +5614,10 @@ bb_bytecode_1:
   BUFFER_WRITEI8 %107, %27, %111, tbuffer
   %152 = BUFFER_READU8 %107, %27, tbuffer
   BUFFER_WRITEI8 %107, %27, %152, tbuffer
-  %191 = ADD_INT %27, 1i
-  %193 = BUFFER_READI8 %107, %191, tbuffer
-  BUFFER_WRITEI8 %107, %191, %193, tbuffer
-  %234 = BUFFER_READU8 %107, %191, tbuffer
-  BUFFER_WRITEI8 %107, %191, %234, tbuffer
+  %193 = BUFFER_READI8 %107, %27, tbuffer, 1i
+  BUFFER_WRITEI8 %107, %27, %193, tbuffer, 1i
+  %234 = BUFFER_READU8 %107, %27, tbuffer, 1i
+  BUFFER_WRITEI8 %107, %27, %234, tbuffer, 1i
   %275 = BUFFER_READI16 %107, %27, tbuffer
   BUFFER_WRITEI16 %107, %27, %275, tbuffer
   %316 = BUFFER_READU16 %107, %27, tbuffer
@@ -5676,11 +5671,10 @@ bb_bytecode_1:
   BUFFER_WRITEI8 %107, %27, %111, tbuffer
   %152 = BUFFER_READU8 %107, %27, tbuffer
   BUFFER_WRITEI8 %107, %27, %152, tbuffer
-  %191 = ADD_INT %27, 1i
-  %193 = BUFFER_READI8 %107, %191, tbuffer
-  BUFFER_WRITEI8 %107, %191, %193, tbuffer
-  %234 = BUFFER_READU8 %107, %191, tbuffer
-  BUFFER_WRITEI8 %107, %191, %234, tbuffer
+  %193 = BUFFER_READI8 %107, %27, tbuffer, 1i
+  BUFFER_WRITEI8 %107, %27, %193, tbuffer, 1i
+  %234 = BUFFER_READU8 %107, %27, tbuffer, 1i
+  BUFFER_WRITEI8 %107, %27, %234, tbuffer, 1i
   %275 = BUFFER_READI16 %107, %27, tbuffer
   BUFFER_WRITEI16 %107, %27, %275, tbuffer
   %316 = BUFFER_READU16 %107, %27, tbuffer
@@ -5719,8 +5713,7 @@ bb_bytecode_1:
    ; exit sync: R2, {%11, %13}
   %27 = BUFFER_READI32 %23, %13, tbuffer
   %28 = INT_TO_NUM %27
-  %45 = ADD_INT %13, 4i
-  %47 = BUFFER_READI32 %23, %45, tbuffer
+  %47 = BUFFER_READI32 %23, %13, tbuffer, 4i
   %48 = INT_TO_NUM %47
   %58 = ADD_NUM %28, %48
   STORE_SPLIT_TVALUE R2, tnumber, %58
@@ -5756,12 +5749,10 @@ bb_bytecode_1:
    ; exit sync: R6, {%9}
   %21 = BUFFER_READI32 %17, %19, tbuffer
   %22 = INT_TO_NUM %21
-  %45 = ADD_INT %19, 4i
-  %47 = BUFFER_READI32 %17, %45, tbuffer
+  %47 = BUFFER_READI32 %17, %19, tbuffer, 4i
   %48 = INT_TO_NUM %47
   %58 = ADD_NUM %22, %48
-  %80 = ADD_INT %19, 8i
-  %82 = BUFFER_READI32 %17, %80, tbuffer
+  %82 = BUFFER_READI32 %17, %19, tbuffer, 8i
   %83 = INT_TO_NUM %82
   %93 = ADD_NUM %58, %83
   STORE_DOUBLE R2, %93
@@ -5881,16 +5872,115 @@ bb_bytecode_1:
   CHECK_BUFFER_LEN %11, %13, -1i, 7i, %12, exit(2)
   %15 = BUFFER_READI8 %11, %13, tbuffer
   %16 = INT_TO_NUM %15
-  %33 = ADD_INT %13, 4i
-  %35 = BUFFER_READI8 %11, %33, tbuffer
+  %35 = BUFFER_READI8 %11, %13, tbuffer, 4i
   %36 = INT_TO_NUM %35
   %46 = ADD_NUM %16, %36
-  %62 = ADD_INT %13, -1i
-  %64 = BUFFER_READF64 %11, %62, tbuffer
+  %64 = BUFFER_READF64 %11, %13, tbuffer, -1i
   %74 = ADD_NUM %46, %64
   STORE_DOUBLE R2, %74
   STORE_TAG R2, tnumber
   INTERRUPT 23u
+  RETURN R2, 1i
+)"
+    );
+}
+
+// One offset shared by two buffers: each buffer's own length check is what authorizes folding that offset into its
+// accesses, so the fold has to be decided per (buffer, base) pair rather than per add
+TEST_CASE_FIXTURE(LoweringFixture, "BufferRelatedIndicesTwoBuffers")
+{
+    CHECK_EQ(
+        "\n" + getCodegenAssembly(R"(
+local function foo(x: buffer, y: buffer, a: number)
+    local v = buffer.readi32(x, a)
+    local w = buffer.readi32(x, a + 8)
+    local u = buffer.readi32(y, a)
+    local t = buffer.readi32(y, a + 8)
+    buffer.writei32(y, a + 8, 0)
+    return v + w + u + t
+end
+)"),
+        R"(
+; function foo($arg0, $arg1, $arg2) line 2
+bb_0:
+  CHECK_TAG R0, tbuffer, exit(entry)
+  CHECK_TAG R1, tbuffer, exit(entry)
+  CHECK_TAG R2, tnumber, exit(entry)
+  JUMP bb_2
+bb_2:
+  JUMP bb_bytecode_1
+bb_bytecode_1:
+  implicit CHECK_SAFE_ENV exit(0)
+  %13 = LOAD_POINTER R0
+  %14 = LOAD_DOUBLE R2
+  %15 = NUM_TO_INT %14
+  CHECK_BUFFER_LEN %13, %15, 0i, 12i, %14, exit(2)
+  %17 = BUFFER_READI32 %13, %15, tbuffer
+  %18 = INT_TO_NUM %17
+  %37 = BUFFER_READI32 %13, %15, tbuffer, 8i
+  %38 = INT_TO_NUM %37
+  %47 = LOAD_POINTER R1
+  CHECK_BUFFER_LEN %47, %15, 0i, 12i, undef, bb_exit_8
+   ; exit sync: R4, R3, {%38, %18}
+  %51 = BUFFER_READI32 %47, %15, tbuffer
+  %52 = INT_TO_NUM %51
+  %71 = BUFFER_READI32 %47, %15, tbuffer, 8i
+  %72 = INT_TO_NUM %71
+  BUFFER_WRITEI32 %47, %15, 0i, tbuffer, 8i
+  %105 = ADD_NUM %18, %38
+  %114 = ADD_NUM %105, %52
+  %123 = ADD_NUM %114, %72
+  STORE_DOUBLE R7, %123
+  STORE_TAG R7, tnumber
+  INTERRUPT 39u
+  RETURN R7, 1i
+)"
+    );
+}
+
+// a64 can only carry a displacement one of its two immediate forms can encode, and the access size decides which.
+// Against the 8 byte data offset of a buffer, for an f64 access:
+//   +1     unaligned, so scaled is out, but 9 is inside the unscaled range and it folds
+//   +2048  aligned and 2056 / 8 is inside the scaled range, so it folds
+//   +2049  unaligned and 2057 is past the unscaled range, so neither fits and the add stays
+// x64 folds all three, which is why this compares the a64 text.
+TEST_CASE_FIXTURE(LoweringFixture, "BufferRelatedIndicesUnencodableA64")
+{
+    compareA64 = true;
+
+    CHECK_EQ(
+        "\n" + getCodegenAssembly(R"(
+local function foo(buf: buffer, a: number)
+    return buffer.readf64(buf, a) + buffer.readf64(buf, a + 1) + buffer.readf64(buf, a + 2048) + buffer.readf64(buf, a + 2049)
+end
+)"),
+        R"(
+; function foo($arg0, $arg1) line 2
+bb_0:
+  %0 = LOAD_TAG R0
+  CHECK_TAG %0, tbuffer, exit(entry)
+  %2 = LOAD_TAG R1
+  CHECK_TAG %2, tnumber, exit(entry)
+  JUMP bb_2
+bb_2:
+  JUMP bb_bytecode_1
+bb_bytecode_1:
+  implicit CHECK_SAFE_ENV exit(0)
+  %11 = LOAD_POINTER R0
+  %12 = LOAD_DOUBLE R1
+  %13 = NUM_TO_INT %12
+  CHECK_BUFFER_LEN %11, %13, 0i, 2057i, %12, exit(2)
+  %15 = BUFFER_READF64 %11, %13, tbuffer
+  %34 = BUFFER_READF64 %11, %13, tbuffer, 1i
+  %44 = ADD_NUM %15, %34
+  %62 = BUFFER_READF64 %11, %13, tbuffer, 2048i
+  %72 = ADD_NUM %44, %62
+  %88 = ADD_INT %13, 2049i
+  %90 = BUFFER_READF64 %11, %88, tbuffer
+  %100 = ADD_NUM %72, %90
+  STORE_DOUBLE R2, %100
+  STORE_TAG R2, tnumber
+  INTERRUPT 31u
   RETURN R2, 1i
 )"
     );

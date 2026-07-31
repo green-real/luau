@@ -3115,71 +3115,71 @@ void IrLoweringX64::lowerInst(IrInst& inst, uint32_t index, const IrBlock& next)
     case IrCmd::BUFFER_READI8:
         inst.regX64 = regs.allocRegOrReuse(SizeX64::dword, index, {OP_A(inst), OP_B(inst)});
 
-        build.movsx(inst.regX64, byte[bufferAddrOp(OP_A(inst), OP_B(inst), tagOp(OP_C(inst)))]);
+        build.movsx(inst.regX64, byte[bufferAddrOp(inst)]);
         break;
 
     case IrCmd::BUFFER_READU8:
         inst.regX64 = regs.allocRegOrReuse(SizeX64::dword, index, {OP_A(inst), OP_B(inst)});
 
-        build.movzx(inst.regX64, byte[bufferAddrOp(OP_A(inst), OP_B(inst), tagOp(OP_C(inst)))]);
+        build.movzx(inst.regX64, byte[bufferAddrOp(inst)]);
         break;
 
     case IrCmd::BUFFER_WRITEI8:
     {
         OperandX64 value = OP_C(inst).kind == IrOpKind::Inst ? byteReg(regOp(OP_C(inst))) : OperandX64(int8_t(intOp(OP_C(inst))));
 
-        build.mov(byte[bufferAddrOp(OP_A(inst), OP_B(inst), tagOp(OP_D(inst)))], value);
+        build.mov(byte[bufferAddrOp(inst)], value);
         break;
     }
 
     case IrCmd::BUFFER_READI16:
         inst.regX64 = regs.allocRegOrReuse(SizeX64::dword, index, {OP_A(inst), OP_B(inst)});
 
-        build.movsx(inst.regX64, word[bufferAddrOp(OP_A(inst), OP_B(inst), tagOp(OP_C(inst)))]);
+        build.movsx(inst.regX64, word[bufferAddrOp(inst)]);
         break;
 
     case IrCmd::BUFFER_READU16:
         inst.regX64 = regs.allocRegOrReuse(SizeX64::dword, index, {OP_A(inst), OP_B(inst)});
 
-        build.movzx(inst.regX64, word[bufferAddrOp(OP_A(inst), OP_B(inst), tagOp(OP_C(inst)))]);
+        build.movzx(inst.regX64, word[bufferAddrOp(inst)]);
         break;
 
     case IrCmd::BUFFER_WRITEI16:
     {
         OperandX64 value = OP_C(inst).kind == IrOpKind::Inst ? wordReg(regOp(OP_C(inst))) : OperandX64(int16_t(intOp(OP_C(inst))));
 
-        build.mov(word[bufferAddrOp(OP_A(inst), OP_B(inst), tagOp(OP_D(inst)))], value);
+        build.mov(word[bufferAddrOp(inst)], value);
         break;
     }
 
     case IrCmd::BUFFER_READI32:
         inst.regX64 = regs.allocRegOrReuse(SizeX64::dword, index, {OP_A(inst), OP_B(inst)});
 
-        build.mov(inst.regX64, dword[bufferAddrOp(OP_A(inst), OP_B(inst), tagOp(OP_C(inst)))]);
+        build.mov(inst.regX64, dword[bufferAddrOp(inst)]);
         break;
 
     case IrCmd::BUFFER_WRITEI32:
     {
         OperandX64 value = OP_C(inst).kind == IrOpKind::Inst ? regOp(OP_C(inst)) : OperandX64(intOp(OP_C(inst)));
 
-        build.mov(dword[bufferAddrOp(OP_A(inst), OP_B(inst), tagOp(OP_D(inst)))], value);
+        build.mov(dword[bufferAddrOp(inst)], value);
         break;
     }
 
     case IrCmd::BUFFER_READF32:
         inst.regX64 = regs.allocReg(SizeX64::xmmword, index);
 
-        build.vmovss(inst.regX64, dword[bufferAddrOp(OP_A(inst), OP_B(inst), tagOp(OP_C(inst)))]);
+        build.vmovss(inst.regX64, dword[bufferAddrOp(inst)]);
         break;
 
     case IrCmd::BUFFER_WRITEF32:
-        storeFloat(dword[bufferAddrOp(OP_A(inst), OP_B(inst), tagOp(OP_D(inst)))], OP_C(inst));
+        storeFloat(dword[bufferAddrOp(inst)], OP_C(inst));
         break;
 
     case IrCmd::BUFFER_READF64:
         inst.regX64 = regs.allocReg(SizeX64::xmmword, index);
 
-        build.vmovsd(inst.regX64, qword[bufferAddrOp(OP_A(inst), OP_B(inst), tagOp(OP_C(inst)))]);
+        build.vmovsd(inst.regX64, qword[bufferAddrOp(inst)]);
         break;
 
     case IrCmd::BUFFER_WRITEF64:
@@ -3188,11 +3188,11 @@ void IrLoweringX64::lowerInst(IrInst& inst, uint32_t index, const IrBlock& next)
             ScopedRegX64 tmp{regs, SizeX64::xmmword};
             build.vmovsd(tmp.reg, build.f64(doubleOp(OP_C(inst))));
 
-            build.vmovsd(qword[bufferAddrOp(OP_A(inst), OP_B(inst), tagOp(OP_D(inst)))], tmp.reg);
+            build.vmovsd(qword[bufferAddrOp(inst)], tmp.reg);
         }
         else if (OP_C(inst).kind == IrOpKind::Inst)
         {
-            build.vmovsd(qword[bufferAddrOp(OP_A(inst), OP_B(inst), tagOp(OP_D(inst)))], regOp(OP_C(inst)));
+            build.vmovsd(qword[bufferAddrOp(inst)], regOp(OP_C(inst)));
         }
         else
         {
@@ -3202,7 +3202,7 @@ void IrLoweringX64::lowerInst(IrInst& inst, uint32_t index, const IrBlock& next)
     case IrCmd::BUFFER_READI64:
         inst.regX64 = regs.allocReg(SizeX64::qword, index);
 
-        build.mov(inst.regX64, qword[bufferAddrOp(OP_A(inst), OP_B(inst), tagOp(OP_C(inst)))]);
+        build.mov(inst.regX64, qword[bufferAddrOp(inst)]);
         break;
 
     case IrCmd::BUFFER_WRITEI64:
@@ -3211,11 +3211,11 @@ void IrLoweringX64::lowerInst(IrInst& inst, uint32_t index, const IrBlock& next)
             ScopedRegX64 tmp{regs, SizeX64::qword};
             build.mov(tmp.reg, build.i64(int64Op(OP_C(inst))));
 
-            build.mov(qword[bufferAddrOp(OP_A(inst), OP_B(inst), tagOp(OP_D(inst)))], tmp.reg);
+            build.mov(qword[bufferAddrOp(inst)], tmp.reg);
         }
         else if (OP_C(inst).kind == IrOpKind::Inst)
         {
-            build.mov(qword[bufferAddrOp(OP_A(inst), OP_B(inst), tagOp(OP_D(inst)))], regOp(OP_C(inst)));
+            build.mov(qword[bufferAddrOp(inst)], regOp(OP_C(inst)));
         }
         else
         {
@@ -4095,10 +4095,20 @@ RegisterX64 IrLoweringX64::regOp(IrOp op)
     return inst.regX64;
 }
 
-OperandX64 IrLoweringX64::bufferAddrOp(IrOp bufferOp, IrOp indexOp, uint8_t tag)
+OperandX64 IrLoweringX64::bufferAddrOp(IrInst& inst)
 {
+    BufferAccessShape shape;
+    bool isBufferAccess = getBufferAccessShape(inst.cmd, shape);
+    CODEGEN_ASSERT(isBufferAccess);
+
+    IrOp bufferOp = OP_A(inst);
+    IrOp indexOp = OP_B(inst);
+    uint8_t tag = tagOp(getOp(inst, shape.tagSlot));
+
     CODEGEN_ASSERT(tag == LUA_TUSERDATA || tag == LUA_TBUFFER || tag == LUA_TVECTOR);
     int dataOffset = tag == LUA_TBUFFER ? offsetof(Buffer, data) : tag == LUA_TVECTOR ? offsetof(LuauVector, v) : offsetof(Udata, data);
+
+    dataOffset += getBufferAccessDisplacement(function, inst, shape);
 
     if (indexOp.kind == IrOpKind::Inst)
     {

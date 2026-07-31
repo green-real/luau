@@ -131,6 +131,21 @@ inline bool hasSideEffects(IrCmd cmd)
     return !hasResult(cmd);
 }
 
+// Operand layout of a buffer access, which differs between reads 'A: ptr, B: offset, C: tag' and writes
+// 'A: ptr, B: offset, C: value, D: tag'. The displacement optimizeBufferOffsets folds out of the offset is
+// optional and goes in the free slot past the tag.
+struct BufferAccessShape
+{
+    int accessSize = 0;
+    uint32_t tagSlot = 0;
+    uint32_t dispSlot = 0;
+};
+
+bool getBufferAccessShape(IrCmd cmd, BufferAccessShape& shape);
+
+// Reads the folded displacement of a buffer access, or 0 if this pass left the access alone
+int getBufferAccessDisplacement(IrFunction& function, IrInst& inst, const BufferAccessShape& shape);
+
 inline bool producesDirtyHighRegisterBits(IrCmd cmd)
 {
     return cmd == IrCmd::NUM_TO_UINT || cmd == IrCmd::INVOKE_FASTCALL || cmd == IrCmd::CMP_ANY;

@@ -466,6 +466,53 @@ static void removeBlockUse(IrFunction& function, uint32_t blockIdx)
         kill(function, block);
 }
 
+bool getBufferAccessShape(IrCmd cmd, BufferAccessShape& shape)
+{
+    switch (cmd)
+    {
+    case IrCmd::BUFFER_READI8:
+    case IrCmd::BUFFER_READU8:
+        shape = BufferAccessShape{1, 2, 3};
+        return true;
+    case IrCmd::BUFFER_WRITEI8:
+        shape = BufferAccessShape{1, 3, 4};
+        return true;
+    case IrCmd::BUFFER_READI16:
+    case IrCmd::BUFFER_READU16:
+        shape = BufferAccessShape{2, 2, 3};
+        return true;
+    case IrCmd::BUFFER_WRITEI16:
+        shape = BufferAccessShape{2, 3, 4};
+        return true;
+    case IrCmd::BUFFER_READI32:
+    case IrCmd::BUFFER_READF32:
+        shape = BufferAccessShape{4, 2, 3};
+        return true;
+    case IrCmd::BUFFER_WRITEI32:
+    case IrCmd::BUFFER_WRITEF32:
+        shape = BufferAccessShape{4, 3, 4};
+        return true;
+    case IrCmd::BUFFER_READF64:
+    case IrCmd::BUFFER_READI64:
+        shape = BufferAccessShape{8, 2, 3};
+        return true;
+    case IrCmd::BUFFER_WRITEF64:
+    case IrCmd::BUFFER_WRITEI64:
+        shape = BufferAccessShape{8, 3, 4};
+        return true;
+    default:
+        return false;
+    }
+}
+
+int getBufferAccessDisplacement(IrFunction& function, IrInst& inst, const BufferAccessShape& shape)
+{
+    if (shape.dispSlot < inst.ops.size() && inst.ops[shape.dispSlot].kind == IrOpKind::Constant)
+        return function.intOp(inst.ops[shape.dispSlot]);
+
+    return 0;
+}
+
 void addUse(IrFunction& function, IrOp op)
 {
     if (op.kind == IrOpKind::Inst)

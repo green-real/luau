@@ -9,6 +9,7 @@
 #include "Luau/IrUtils.h"
 #include "Luau/LogBuilder.h"
 #include "Luau/LoweringStats.h"
+#include "Luau/OptimizeBufferOffsets.h"
 #include "Luau/OptimizeConstProp.h"
 #include "Luau/OptimizeDeadStore.h"
 #include "Luau/OptimizeFinalX64.h"
@@ -350,6 +351,16 @@ inline bool lowerImpl(
     return true;
 }
 
+inline BufferOffsetTarget getBufferOffsetTarget(X64::AssemblyBuilderX64&)
+{
+    return BufferOffsetTarget::X64;
+}
+
+inline BufferOffsetTarget getBufferOffsetTarget(A64::AssemblyBuilderA64&)
+{
+    return BufferOffsetTarget::A64;
+}
+
 inline bool lowerIr(
     LogBuilder* logger,
     X64::AssemblyBuilderX64& build,
@@ -465,6 +476,10 @@ inline bool lowerFunction(
     computeCfgBlockEdges(ir.function);
 
     std::vector<uint32_t> sortedBlocks = getSortedBlockOrder(ir.function);
+
+    // Folding a constant offset into a buffer access extends the live range of the base it is folded onto, so this
+    // has to run before last use locations are computed rather than alongside the other pre-lowering peepholes
+    optimizeBufferOffsets(ir, sortedBlocks, getBufferOffsetTarget(build));
 
     // In order to allocate registers during lowering, we need to know where instruction results are last used
     updateLastUseLocations(ir.function, sortedBlocks);

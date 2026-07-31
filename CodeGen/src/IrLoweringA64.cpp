@@ -3567,7 +3567,7 @@ void IrLoweringA64::lowerInst(IrInst& inst, uint32_t index, const IrBlock& next)
     case IrCmd::BUFFER_READI8:
     {
         inst.regA64 = regs.allocReuse(KindA64::w, index, {OP_B(inst)});
-        AddressA64 addr = tempAddrBuffer(OP_A(inst), OP_B(inst), tagOp(OP_C(inst)));
+        AddressA64 addr = tempAddrBuffer(inst);
 
         build.ldrsb(inst.regA64, addr);
         break;
@@ -3576,7 +3576,7 @@ void IrLoweringA64::lowerInst(IrInst& inst, uint32_t index, const IrBlock& next)
     case IrCmd::BUFFER_READU8:
     {
         inst.regA64 = regs.allocReuse(KindA64::w, index, {OP_B(inst)});
-        AddressA64 addr = tempAddrBuffer(OP_A(inst), OP_B(inst), tagOp(OP_C(inst)));
+        AddressA64 addr = tempAddrBuffer(inst);
 
         build.ldrb(inst.regA64, addr);
         break;
@@ -3585,7 +3585,7 @@ void IrLoweringA64::lowerInst(IrInst& inst, uint32_t index, const IrBlock& next)
     case IrCmd::BUFFER_WRITEI8:
     {
         RegisterA64 temp = tempInt(OP_C(inst));
-        AddressA64 addr = tempAddrBuffer(OP_A(inst), OP_B(inst), tagOp(OP_D(inst)));
+        AddressA64 addr = tempAddrBuffer(inst);
 
         build.strb(temp, addr);
         break;
@@ -3594,7 +3594,7 @@ void IrLoweringA64::lowerInst(IrInst& inst, uint32_t index, const IrBlock& next)
     case IrCmd::BUFFER_READI16:
     {
         inst.regA64 = regs.allocReuse(KindA64::w, index, {OP_B(inst)});
-        AddressA64 addr = tempAddrBuffer(OP_A(inst), OP_B(inst), tagOp(OP_C(inst)));
+        AddressA64 addr = tempAddrBuffer(inst);
 
         build.ldrsh(inst.regA64, addr);
         break;
@@ -3603,7 +3603,7 @@ void IrLoweringA64::lowerInst(IrInst& inst, uint32_t index, const IrBlock& next)
     case IrCmd::BUFFER_READU16:
     {
         inst.regA64 = regs.allocReuse(KindA64::w, index, {OP_B(inst)});
-        AddressA64 addr = tempAddrBuffer(OP_A(inst), OP_B(inst), tagOp(OP_C(inst)));
+        AddressA64 addr = tempAddrBuffer(inst);
 
         build.ldrh(inst.regA64, addr);
         break;
@@ -3612,7 +3612,7 @@ void IrLoweringA64::lowerInst(IrInst& inst, uint32_t index, const IrBlock& next)
     case IrCmd::BUFFER_WRITEI16:
     {
         RegisterA64 temp = tempInt(OP_C(inst));
-        AddressA64 addr = tempAddrBuffer(OP_A(inst), OP_B(inst), tagOp(OP_D(inst)));
+        AddressA64 addr = tempAddrBuffer(inst);
 
         build.strh(temp, addr);
         break;
@@ -3621,7 +3621,7 @@ void IrLoweringA64::lowerInst(IrInst& inst, uint32_t index, const IrBlock& next)
     case IrCmd::BUFFER_READI32:
     {
         inst.regA64 = regs.allocReuse(KindA64::w, index, {OP_B(inst)});
-        AddressA64 addr = tempAddrBuffer(OP_A(inst), OP_B(inst), tagOp(OP_C(inst)));
+        AddressA64 addr = tempAddrBuffer(inst);
 
         build.ldr(inst.regA64, addr);
         break;
@@ -3630,7 +3630,7 @@ void IrLoweringA64::lowerInst(IrInst& inst, uint32_t index, const IrBlock& next)
     case IrCmd::BUFFER_WRITEI32:
     {
         RegisterA64 temp = tempInt(OP_C(inst));
-        AddressA64 addr = tempAddrBuffer(OP_A(inst), OP_B(inst), tagOp(OP_D(inst)));
+        AddressA64 addr = tempAddrBuffer(inst);
 
         build.str(temp, addr);
         break;
@@ -3639,7 +3639,7 @@ void IrLoweringA64::lowerInst(IrInst& inst, uint32_t index, const IrBlock& next)
     case IrCmd::BUFFER_READF32:
     {
         inst.regA64 = regs.allocReg(KindA64::s, index);
-        AddressA64 addr = tempAddrBuffer(OP_A(inst), OP_B(inst), tagOp(OP_C(inst)));
+        AddressA64 addr = tempAddrBuffer(inst);
 
         build.ldr(inst.regA64, addr);
         break;
@@ -3648,7 +3648,7 @@ void IrLoweringA64::lowerInst(IrInst& inst, uint32_t index, const IrBlock& next)
     case IrCmd::BUFFER_WRITEF32:
     {
         RegisterA64 temp = tempFloat(OP_C(inst));
-        AddressA64 addr = tempAddrBuffer(OP_A(inst), OP_B(inst), tagOp(OP_D(inst)));
+        AddressA64 addr = tempAddrBuffer(inst);
 
         build.str(temp, addr);
         break;
@@ -3657,7 +3657,7 @@ void IrLoweringA64::lowerInst(IrInst& inst, uint32_t index, const IrBlock& next)
     case IrCmd::BUFFER_READF64:
     {
         inst.regA64 = regs.allocReg(KindA64::d, index);
-        AddressA64 addr = tempAddrBuffer(OP_A(inst), OP_B(inst), tagOp(OP_C(inst)));
+        AddressA64 addr = tempAddrBuffer(inst);
 
         build.ldr(inst.regA64, addr);
         break;
@@ -3666,7 +3666,7 @@ void IrLoweringA64::lowerInst(IrInst& inst, uint32_t index, const IrBlock& next)
     case IrCmd::BUFFER_WRITEF64:
     {
         RegisterA64 temp = tempDouble(OP_C(inst));
-        AddressA64 addr = tempAddrBuffer(OP_A(inst), OP_B(inst), tagOp(OP_D(inst)));
+        AddressA64 addr = tempAddrBuffer(inst);
 
         build.str(temp, addr);
         break;
@@ -3675,7 +3675,7 @@ void IrLoweringA64::lowerInst(IrInst& inst, uint32_t index, const IrBlock& next)
     case IrCmd::BUFFER_READI64:
     {
         inst.regA64 = regs.allocReg(KindA64::x, index);
-        AddressA64 addr = tempAddrBuffer(OP_A(inst), OP_B(inst), tagOp(OP_C(inst)));
+        AddressA64 addr = tempAddrBuffer(inst);
 
         build.ldr(inst.regA64, addr);
         break;
@@ -3684,7 +3684,7 @@ void IrLoweringA64::lowerInst(IrInst& inst, uint32_t index, const IrBlock& next)
     case IrCmd::BUFFER_WRITEI64:
     {
         RegisterA64 temp = tempInt64(OP_C(inst));
-        AddressA64 addr = tempAddrBuffer(OP_A(inst), OP_B(inst), tagOp(OP_D(inst)));
+        AddressA64 addr = tempAddrBuffer(inst);
 
         build.str(temp, addr);
         break;
@@ -4200,10 +4200,21 @@ AddressA64 IrLoweringA64::tempAddr(IrOp op, int offset, RegisterA64 tempStorage)
     }
 }
 
-AddressA64 IrLoweringA64::tempAddrBuffer(IrOp bufferOp, IrOp indexOp, uint8_t tag)
+AddressA64 IrLoweringA64::tempAddrBuffer(IrInst& inst)
 {
+    BufferAccessShape shape;
+    bool isBufferAccess = getBufferAccessShape(inst.cmd, shape);
+    CODEGEN_ASSERT(isBufferAccess);
+
+    IrOp bufferOp = OP_A(inst);
+    IrOp indexOp = OP_B(inst);
+    uint8_t tag = tagOp(getOp(inst, shape.tagSlot));
+
     CODEGEN_ASSERT(tag == LUA_TUSERDATA || tag == LUA_TBUFFER || tag == LUA_TVECTOR);
     int dataOffset = tag == LUA_TBUFFER ? offsetof(Buffer, data) : tag == LUA_TVECTOR ? offsetof(LuauVector, v) : offsetof(Udata, data);
+
+    // optimizeBufferOffsets only folds what one of the two immediate forms can carry; placeA picks between them
+    dataOffset += getBufferAccessDisplacement(function, inst, shape);
 
     if (indexOp.kind == IrOpKind::Inst)
     {

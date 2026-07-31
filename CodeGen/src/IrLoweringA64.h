@@ -56,7 +56,7 @@ struct IrLoweringA64
     RegisterA64 tempInt64(IrOp op);
     RegisterA64 tempUint(IrOp op);
     AddressA64 tempAddr(IrOp op, int offset, RegisterA64 tempStorage = noreg); // Existing temporary register can be provided
-    AddressA64 tempAddrBuffer(IrOp bufferOp, IrOp indexOp, uint8_t tag);
+    AddressA64 tempAddrBuffer(IrInst& inst);
 
     // May emit restore instructions
     RegisterA64 regOp(IrOp op);
