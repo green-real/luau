@@ -121,11 +121,18 @@ struct BufferOffsetFolder
         if (OP_A(inst).kind != IrOpKind::Inst || OP_B(inst).kind != IrOpKind::Inst)
             return;
 
+        // Nothing folds unless the index is a constant away from another value, and the tag lookup below is only
+        // needed once one is found.
+        IrInst* head = function.asInstOp(OP_B(inst));
+
+        if (!head || head->cmd != IrCmd::ADD_INT)
+            return;
+
         int dataOffset = getTagDataOffset(function.tagOp(getOp(inst, shape.tagSlot)));
 
-        // Constant propagation rebases an access onto the previous check's operand, and that operand is often
-        // already a rebased add, so an index can be a short chain. Take the deepest base a check validated: the
-        // shared inner add only dies once every access hanging off it has moved past it.
+        // Constant propagation rebases an access onto the previous check's operand, so an index can be a short chain
+        // of them. Take the deepest base a check validated: the shared inner add only dies once every access hanging
+        // off it has moved past it.
         IrOp current = OP_B(inst);
         int64_t accumulated = 0;
 

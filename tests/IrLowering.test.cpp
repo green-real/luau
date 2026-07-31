@@ -5986,6 +5986,51 @@ bb_bytecode_1:
     );
 }
 
+TEST_CASE_FIXTURE(LoweringFixture, "BufferRelatedIndicesUncheckedBase")
+{
+    // The wrap mask is the point. `bit32.band(x + c, 0xFFFFFFFF)` asks for the add to wrap at 32 bits, which is what
+    // narrows it to ADD_INT, and the bounds check then lands on the wrapped sum rather than on the shift feeding it.
+    // Folding c into the access displacement would recompute the address in 64 bits from a base no check bounded, so a
+    // shift reaching the top of the range would pass the check on its small wrapped index and read far outside the
+    // buffer. The ADD_INT has to survive, and the access has to keep indexing off the value that was checked.
+    //
+    // The shift is load-bearing and must not be "simplified". A base spelled bit32.bor(k, 0) lowers to NUM_TO_UINT,
+    // which producesDirtyHighRegisterBits already rejects one step earlier, so the fold would be declined for an
+    // unrelated reason and this case would keep passing with the validated-base check deleted. BITLSHIFT_UINT is clean,
+    // so the validated-base lookup is what refuses, which is the thing under test.
+    CHECK_EQ(
+        "\n" + getCodegenAssembly(R"(
+local function foo(mem: buffer, k: number)
+    return buffer.readu32(mem, bit32.band(bit32.lshift(k, 2) + 16, 0xFFFFFFFF))
+end
+)"),
+        R"(
+; function foo($arg0, $arg1) line 2
+bb_0:
+  CHECK_TAG R0, tbuffer, exit(entry)
+  CHECK_TAG R1, tnumber, exit(entry)
+  JUMP bb_2
+bb_2:
+  JUMP bb_bytecode_1
+bb_bytecode_1:
+  implicit CHECK_SAFE_ENV exit(0)
+  %9 = LOAD_DOUBLE R1
+  %10 = NUM_TO_UINT %9
+  %11 = BITLSHIFT_UINT %10, 2i
+  %26 = ADD_INT %11, 16i
+  %38 = LOAD_POINTER R0
+  CHECK_BUFFER_LEN %38, %26, 0i, 4i, undef, bb_exit_6
+   ; exit sync: R4, {%26}
+  %42 = BUFFER_READI32 %38, %26, tbuffer
+  %43 = UINT_TO_NUM %42
+  STORE_DOUBLE R2, %43
+  STORE_TAG R2, tnumber
+  INTERRUPT 20u
+  RETURN R2, 1i
+)"
+    );
+}
+
 TEST_CASE_FIXTURE(LoweringFixture, "BufferVmExitSync")
 {
     CHECK_EQ(
