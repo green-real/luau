@@ -6,6 +6,7 @@
 #include "lapi.h"
 #include "ldo.h"
 #include "ludata.h"
+#include "ldebug.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -209,6 +210,15 @@ static int luaB_typeof(lua_State* L)
     return 1;
 }
 
+// Whether the function that called this one is running natively. Level 1 is that direct caller, so `is_native()` at the
+// top of a function answers for the function itself, which is what a benchmark needs to assert it is not silently
+// measuring bytecode.
+static int luaB_isnative(lua_State* L)
+{
+    lua_pushboolean(L, luaG_isnative(L, 1));
+    return 1;
+}
+
 int luaB_next(lua_State* L)
 {
     luaL_checktype(L, 1, LUA_TTABLE);
@@ -378,6 +388,7 @@ static const luaL_Reg base_funcs[] = {
     {"setmetatable", luaB_setmetatable},
     {"tonumber", luaB_tonumber},
     {"tostring", luaB_tostring},
+    {"is_native", luaB_isnative},
     {"type", luaB_type},
     {"typeof", luaB_typeof},
     {NULL, NULL},
