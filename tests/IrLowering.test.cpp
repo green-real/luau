@@ -20,6 +20,7 @@ LUAU_FASTFLAG(LuauIntegerFastcalls)
 LUAU_FASTFLAG(LuauCodegenInteger3)
 LUAU_FASTFLAG(LuauCodegenLinearNoCall)
 LUAU_FASTFLAG(LuauIntegerType2)
+LUAU_FASTFLAG(LuauCodegenFuseIntegerCompareJump)
 LUAU_FASTFLAG(LuauCodegenBufferInteger)
 LUAU_FASTFLAG(LuauIntegerBufferFastcalls)
 LUAU_FASTFLAG(LuauCodegenLoadPropagateOrigin)
@@ -8729,6 +8730,112 @@ bb_bytecode_2:
   STORE_TAG R3, tnumber
   INTERRUPT 20u
   RETURN R3, 1i
+)"
+    );
+}
+
+TEST_CASE_FIXTURE(LoweringFixture, "IntegerCompareJumpFusionSingleUse")
+{
+    ScopedFastFlag luauIntegerFastcalls{FFlag::LuauIntegerFastcalls, true};
+    ScopedFastFlag luauCodegenInteger3{FFlag::LuauCodegenInteger3, true};
+    ScopedFastFlag luauIntegerType{FFlag::LuauIntegerType2, true};
+    ScopedFastFlag luauFuse{FFlag::LuauCodegenFuseIntegerCompareJump, true};
+
+    // Nothing reads the boolean, so the comparison becomes the jump and none is materialized.
+    CHECK_EQ(
+        "\n" + getCodegenAssembly(
+                   R"(
+local function foo(x: integer, y: integer)
+    if integer.ult(x, y) then
+        return 1
+    end
+    return 2
+end
+)",
+                   true,
+                   1,
+                   2
+               ),
+        R"(
+; function foo($arg0, $arg1) line 2
+; R0: integer [argument]
+; R1: integer [argument]
+bb_0:
+  CHECK_TAG R0, tinteger, exit(entry)
+  CHECK_TAG R1, tinteger, exit(entry)
+  JUMP bb_3
+bb_3:
+  JUMP bb_bytecode_1
+bb_bytecode_1:
+  implicit CHECK_SAFE_ENV exit(0)
+  %11 = LOAD_INT64 R0
+  %12 = LOAD_INT64 R1
+  JUMP_CMP_INT64 %11, %12, u_lt, bb_5, bb_bytecode_2
+bb_5:
+  STORE_DOUBLE R2, 1
+  STORE_TAG R2, tnumber
+  INTERRUPT 9u
+  RETURN R2, 1i
+bb_bytecode_2:
+  STORE_DOUBLE R2, 2
+  STORE_TAG R2, tnumber
+  INTERRUPT 11u
+  RETURN R2, 1i
+)"
+    );
+}
+
+TEST_CASE_FIXTURE(LoweringFixture, "IntegerCompareJumpFusionValueStillRead")
+{
+    ScopedFastFlag luauIntegerFastcalls{FFlag::LuauIntegerFastcalls, true};
+    ScopedFastFlag luauCodegenInteger3{FFlag::LuauCodegenInteger3, true};
+    ScopedFastFlag luauIntegerType{FFlag::LuauIntegerType2, true};
+    ScopedFastFlag luauFuse{FFlag::LuauCodegenFuseIntegerCompareJump, true};
+
+    // The boolean is returned as well as branched on, so it stays materialized and the fused jump repeats the
+    // comparison rather than loading it back and dispatching on its tag.
+    CHECK_EQ(
+        "\n" + getCodegenAssembly(
+                   R"(
+local function foo(x: integer, y: integer)
+    local c = integer.ult(x, y)
+    if c then
+        return 1
+    end
+    return c
+end
+)",
+                   true,
+                   1,
+                   2
+               ),
+        R"(
+; function foo($arg0, $arg1) line 2
+; R0: integer [argument]
+; R1: integer [argument]
+; R2: boolean from 0 to 11
+bb_0:
+  CHECK_TAG R0, tinteger, exit(entry)
+  CHECK_TAG R1, tinteger, exit(entry)
+  JUMP bb_3
+bb_3:
+  JUMP bb_bytecode_1
+bb_bytecode_1:
+  implicit CHECK_SAFE_ENV exit(0)
+  %11 = LOAD_INT64 R0
+  %12 = LOAD_INT64 R1
+  %13 = CMP_INT64 %11, %12, u_lt
+  STORE_INT R2, %13
+  STORE_TAG R2, tboolean
+  JUMP_CMP_INT64 %11, %12, u_lt, bb_5, bb_bytecode_2
+bb_5:
+  STORE_DOUBLE R3, 1
+  STORE_TAG R3, tnumber
+  INTERRUPT 9u
+  RETURN R3, 1i
+bb_bytecode_2:
+  INTERRUPT 10u
+  RETURN R2, 1i
 )"
     );
 }
