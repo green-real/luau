@@ -121,6 +121,7 @@ target_sources(Luau.CodeGen PRIVATE
     CodeGen/include/Luau/IrAnalysis.h
     CodeGen/include/Luau/IrBuilder.h
     CodeGen/include/Luau/IrCallWrapperX64.h
+    CodeGen/include/Luau/IrDetailReport.h
     CodeGen/include/Luau/IrDump.h
     CodeGen/include/Luau/IrData.h
     CodeGen/include/Luau/IrRegAllocX64.h
@@ -160,6 +161,7 @@ target_sources(Luau.CodeGen PRIVATE
     CodeGen/src/IrAnalysis.cpp
     CodeGen/src/IrBuilder.cpp
     CodeGen/src/IrCallWrapperX64.cpp
+    CodeGen/src/IrDetailReport.cpp
     CodeGen/src/IrDump.cpp
     CodeGen/src/IrLoweringA64.cpp
     CodeGen/src/IrLoweringX64.cpp
