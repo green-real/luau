@@ -22,6 +22,8 @@
 #include "lstate.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <vector>
 
 LUAU_FASTFLAG(DebugCodegenOptSize)
@@ -412,6 +414,20 @@ inline bool lowerFunction(
         preOptBlockCount += (block.kind != IrBlockKind::Dead);
         unsigned blockInstructions = block.finish - block.start;
         maxBlockInstructions = std::max(maxBlockInstructions, blockInstructions);
+    }
+
+    // Report the per-proto block counts the heuristics below are checked against, so a caller can compare its own
+    // block model to the real one. Only the large protos, since only those approach the limit.
+    if (preOptBlockCount >= 1000 && getenv("LUTE_CODEGEN_LOG"))
+    {
+        fprintf(
+            stderr,
+            "[codegen-blocks] proto '%s' (line %d): blocksPreOpt=%u maxBlockInstr=%u\n",
+            proto && proto->debugname ? getstr(proto->debugname) : "?",
+            proto ? proto->linedefined : -1,
+            preOptBlockCount,
+            maxBlockInstructions
+        );
     }
 
     // we update stats before checking the heuristic so that even if we bail out
