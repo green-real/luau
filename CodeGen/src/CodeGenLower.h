@@ -83,6 +83,83 @@ inline unsigned getInstructionCount(const std::vector<IrInst>& instructions, IrC
     ));
 }
 
+inline IrBlockClass getBlockClass(IrBlockKind kind)
+{
+    switch (kind)
+    {
+    case IrBlockKind::Fallback:
+        return IrBlockClass_Fallback;
+    case IrBlockKind::ExitSync:
+        return IrBlockClass_ExitSync;
+    default:
+        return IrBlockClass_Fast;
+    }
+}
+
+// Walk the final IR and record what it is made of. Called once per function, after the last pass and before
+// lowering.
+//
+// The walk mirrors the lowering loop exactly: the same sorted block order, and the same skip of pseudo commands,
+// which exist for internal bookkeeping and never reach the backend. Walking blocks in storage order instead counts
+// instructions that are never lowered, which is a quiet way to inflate every number this produces.
+inline void collectIrDetail(IrFunction& function, const std::vector<uint32_t>& sortedBlocks, IrDetailStats& detail)
+{
+    detail.ensure();
+
+    for (uint32_t blockIdx : sortedBlocks)
+    {
+        const IrBlock& block = function.blocks[blockIdx];
+
+        if (block.kind == IrBlockKind::Dead || block.start == ~0u)
+            continue;
+
+        const size_t blockClass = size_t(getBlockClass(block.kind));
+        detail.blocksByClass[blockClass]++;
+
+        for (uint32_t index = block.start; index <= block.finish; index++)
+        {
+            IrInst& inst = function.instructions[index];
+
+            if (isPseudo(inst.cmd))
+                continue;
+
+            const size_t cmd = size_t(uint8_t(inst.cmd));
+            detail.cmdByClass[cmd * IrBlockClass_Count + blockClass]++;
+
+            if (hasResult(inst.cmd))
+            {
+                const size_t kind = size_t(getCmdValueKind(inst.cmd));
+
+                if (kind < kIrValueKindSlots)
+                    detail.valueKindByClass[kind * IrBlockClass_Count + blockClass]++;
+
+                const uint32_t uses = inst.useCount;
+                const size_t bucket = uses >= 8 ? 5 : (uses >= 4 ? 4 : uses);
+                detail.useCountBuckets[bucket]++;
+            }
+
+            visitArguments(
+                inst,
+                [&](IrOp op)
+                {
+                    const size_t opk = size_t(op.kind);
+
+                    if (opk < kIrOpKindSlots)
+                        detail.opKind[opk]++;
+
+                    // An operand naming another instruction is one dataflow edge: this command was computed so
+                    // that one could consume it.
+                    if (op.kind == IrOpKind::Inst && op.index < function.instructions.size())
+                    {
+                        const size_t def = size_t(uint8_t(function.instructions[op.index].cmd));
+                        detail.defUse[def * kIrCmdSlots + cmd]++;
+                    }
+                }
+            );
+        }
+    }
+}
+
 template<typename AssemblyBuilder, typename IrLowering>
 inline bool lowerImpl(
     LogBuilder* logger,
@@ -507,6 +584,9 @@ inline bool lowerFunction(
             if (block.kind != IrBlockKind::Dead)
                 ++stats->blocksPostOpt;
         }
+
+        if (stats->functionStatsFlags & FunctionStats_IrDetail)
+            collectIrDetail(ir.function, sortedBlocks, stats->irDetail);
     }
 
     bool result = lowerIr(logger, build, ir, sortedBlocks, helpers, proto, options, stats);

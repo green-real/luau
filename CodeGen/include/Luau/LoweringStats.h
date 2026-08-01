@@ -37,6 +37,93 @@ enum FunctionStatsFlags
     FunctionStats_Enable = 1 << 0,
     // Compute function bytecode summary
     FunctionStats_BytecodeSummary = 1 << 1,
+    // Collect the per-command, def-use and representation counters below
+    FunctionStats_IrDetail = 1 << 2,
+};
+
+// Which path a block sits on. Counting a fast-path instruction and a deopt-path one in the same bucket hides the
+// thing worth knowing, because the second only runs when the first has already given up.
+enum IrBlockClass
+{
+    // Bytecode, Internal and Linearized: what a run that never leaves native executes
+    IrBlockClass_Fast,
+    // Fallback: the VM helper path a guard drops into
+    IrBlockClass_Fallback,
+    // ExitSync: register sync written before handing control back to the interpreter
+    IrBlockClass_ExitSync,
+
+    IrBlockClass_Count,
+};
+
+// IrCmd is a uint8_t, so this covers every command without depending on which one happens to be declared last.
+inline constexpr size_t kIrCmdSlots = 256;
+inline constexpr size_t kIrOpKindSlots = 16;
+inline constexpr size_t kIrValueKindSlots = 16;
+inline constexpr size_t kUseCountBuckets = 6;
+
+// Counters over the IR the backend actually consumes, collected after optimization and before lowering.
+//
+// Every vector stays empty unless FunctionStats_IrDetail is set, so a normal compile allocates nothing and the
+// merge below is a no-op. Answering these questions by matching text against an IR dump does not work: the dump
+// omits exit blocks, hides which value an operand refers to, and cannot tell a result-producing instruction from
+// a store.
+struct IrDetailStats
+{
+    // [command][block class]
+    std::vector<uint32_t> cmdByClass;
+    // [defining command][consuming command]: an edge per operand that references another instruction's result.
+    // This is the question adjacency in a dump cannot answer, because scheduling is not dataflow.
+    std::vector<uint32_t> defUse;
+    // [value kind][block class], the representation each result is held in
+    std::vector<uint32_t> valueKindByClass;
+    // [operand kind], counted over every operand of every live instruction
+    std::vector<uint32_t> opKind;
+    // Results bucketed by how many times they are used: 0, 1, 2, 3, 4-7, 8+
+    std::vector<uint32_t> useCountBuckets;
+    // [block class]
+    std::vector<uint32_t> blocksByClass;
+
+    void ensure()
+    {
+        if (cmdByClass.empty())
+        {
+            cmdByClass.resize(kIrCmdSlots * IrBlockClass_Count);
+            defUse.resize(kIrCmdSlots * kIrCmdSlots);
+            valueKindByClass.resize(kIrValueKindSlots * IrBlockClass_Count);
+            opKind.resize(kIrOpKindSlots);
+            useCountBuckets.resize(kUseCountBuckets);
+            blocksByClass.resize(IrBlockClass_Count);
+        }
+    }
+
+    bool empty() const
+    {
+        return cmdByClass.empty();
+    }
+
+    static void addInto(std::vector<uint32_t>& target, const std::vector<uint32_t>& source)
+    {
+        if (source.empty())
+            return;
+
+        if (target.size() < source.size())
+            target.resize(source.size());
+
+        for (size_t i = 0; i < source.size(); i++)
+            target[i] += source[i];
+    }
+
+    IrDetailStats& operator+=(const IrDetailStats& that)
+    {
+        addInto(cmdByClass, that.cmdByClass);
+        addInto(defUse, that.defUse);
+        addInto(valueKindByClass, that.valueKindByClass);
+        addInto(opKind, that.opKind);
+        addInto(useCountBuckets, that.useCountBuckets);
+        addInto(blocksByClass, that.blocksByClass);
+
+        return *this;
+    }
 };
 
 struct FunctionStats
@@ -66,6 +153,8 @@ struct LoweringStats
 
     BlockLinearizationStats blockLinearizationStats;
 
+    IrDetailStats irDetail;
+
     unsigned functionStatsFlags = 0;
     std::vector<FunctionStats> functions;
 
@@ -91,6 +180,8 @@ struct LoweringStats
         this->loweringErrors += that.loweringErrors;
 
         this->blockLinearizationStats += that.blockLinearizationStats;
+
+        this->irDetail += that.irDetail;
 
         if (this->functionStatsFlags & FunctionStats_Enable)
             this->functions.insert(this->functions.end(), that.functions.begin(), that.functions.end());

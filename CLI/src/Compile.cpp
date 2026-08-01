@@ -5,6 +5,9 @@
 
 #include "Luau/CodeGen.h"
 #include "Luau/Compiler.h"
+#include "Luau/IrData.h"
+#include "Luau/IrDetailReport.h"
+#include "Luau/IrDump.h"
 #include "Luau/BytecodeBuilder.h"
 #include "Luau/Parser.h"
 #include "Luau/TimeTrace.h"
@@ -226,6 +229,135 @@ void serializeBlockLinearizationStats(FILE* fp, const Luau::CodeGen::BlockLinear
     fprintf(fp, "            }");
 }
 
+static bool g_serializeIrDetailRaw = false;
+
+static const char* const kIrBlockClassNames[] = {"fast", "fallback", "exitSync"};
+
+static const char* getOpKindName(Luau::CodeGen::IrOpKind kind)
+{
+    using namespace Luau::CodeGen;
+
+    switch (kind)
+    {
+    case IrOpKind::None:
+        return "none";
+    case IrOpKind::Undef:
+        return "undef";
+    case IrOpKind::Constant:
+        return "constant";
+    case IrOpKind::Condition:
+        return "condition";
+    case IrOpKind::Inst:
+        return "inst";
+    case IrOpKind::Block:
+        return "block";
+    case IrOpKind::VmReg:
+        return "vmReg";
+    case IrOpKind::VmConst:
+        return "vmConst";
+    case IrOpKind::VmUpvalue:
+        return "vmUpvalue";
+    case IrOpKind::VmExit:
+        return "vmExit";
+    }
+
+    return "?";
+}
+
+// Emit the counters keyed by name rather than by index, so a reader never has to reconstruct an enum ordering that
+// changes whenever a command is added. Zero entries are omitted: the matrix is overwhelmingly sparse.
+void serializeIrDetail(FILE* fp, const Luau::CodeGen::IrDetailStats& detail)
+{
+    using namespace Luau::CodeGen;
+
+    if (detail.empty())
+    {
+        fprintf(fp, "null");
+        return;
+    }
+
+    fprintf(fp, "{\n");
+
+    fprintf(fp, "                \"blocksByClass\": {");
+    for (size_t c = 0; c < IrBlockClass_Count; c++)
+        fprintf(fp, "%s\"%s\": %u", c == 0 ? "" : ", ", kIrBlockClassNames[c], detail.blocksByClass[c]);
+    fprintf(fp, "},\n");
+
+    fprintf(fp, "                \"useCountBuckets\": [");
+    for (size_t b = 0; b < detail.useCountBuckets.size(); b++)
+        fprintf(fp, "%s%u", b == 0 ? "" : ", ", detail.useCountBuckets[b]);
+    fprintf(fp, "],\n");
+
+    fprintf(fp, "                \"opKind\": {");
+    bool first = true;
+    for (size_t k = 0; k < detail.opKind.size(); k++)
+    {
+        if (detail.opKind[k] == 0)
+            continue;
+
+        fprintf(fp, "%s\"%s\": %u", first ? "" : ", ", getOpKindName(IrOpKind(k)), detail.opKind[k]);
+        first = false;
+    }
+    fprintf(fp, "},\n");
+
+    fprintf(fp, "                \"valueKindByClass\": {");
+    first = true;
+    for (size_t v = 0; v < kIrValueKindSlots; v++)
+    {
+        unsigned total = 0;
+        for (size_t c = 0; c < IrBlockClass_Count; c++)
+            total += detail.valueKindByClass[v * IrBlockClass_Count + c];
+
+        if (total == 0)
+            continue;
+
+        fprintf(fp, "%s\"%s\": [", first ? "" : ", ", getValueKindName(IrValueKind(v)));
+        for (size_t c = 0; c < IrBlockClass_Count; c++)
+            fprintf(fp, "%s%u", c == 0 ? "" : ", ", detail.valueKindByClass[v * IrBlockClass_Count + c]);
+        fprintf(fp, "]");
+        first = false;
+    }
+    fprintf(fp, "},\n");
+
+    fprintf(fp, "                \"cmdByClass\": {");
+    first = true;
+    for (size_t cmd = 0; cmd < kIrCmdSlots; cmd++)
+    {
+        unsigned total = 0;
+        for (size_t c = 0; c < IrBlockClass_Count; c++)
+            total += detail.cmdByClass[cmd * IrBlockClass_Count + c];
+
+        if (total == 0)
+            continue;
+
+        fprintf(fp, "%s\n                    \"%s\": [", first ? "" : ",", getCmdName(IrCmd(cmd)));
+        for (size_t c = 0; c < IrBlockClass_Count; c++)
+            fprintf(fp, "%s%u", c == 0 ? "" : ", ", detail.cmdByClass[cmd * IrBlockClass_Count + c]);
+        fprintf(fp, "]");
+        first = false;
+    }
+    fprintf(fp, "\n                },\n");
+
+    fprintf(fp, "                \"defUse\": {");
+    first = true;
+    for (size_t def = 0; def < kIrCmdSlots; def++)
+    {
+        for (size_t use = 0; use < kIrCmdSlots; use++)
+        {
+            const uint32_t count = detail.defUse[def * kIrCmdSlots + use];
+
+            if (count == 0)
+                continue;
+
+            fprintf(fp, "%s\n                    \"%s>%s\": %u", first ? "" : ",", getCmdName(IrCmd(def)), getCmdName(IrCmd(use)), count);
+            first = false;
+        }
+    }
+    fprintf(fp, "\n                }\n");
+
+    fprintf(fp, "            }");
+}
+
 void serializeLoweringStats(FILE* fp, const Luau::CodeGen::LoweringStats& stats)
 {
     fprintf(fp, "{\n");
@@ -244,6 +376,13 @@ void serializeLoweringStats(FILE* fp, const Luau::CodeGen::LoweringStats& stats)
     WRITE_NAME("            ", blockLinearizationStats);
     serializeBlockLinearizationStats(fp, stats.blockLinearizationStats);
     fprintf(fp, ",\n");
+
+    if (g_serializeIrDetailRaw)
+    {
+        WRITE_NAME("            ", irDetail);
+        serializeIrDetail(fp, stats.irDetail);
+        fprintf(fp, ",\n");
+    }
 
     WRITE_NAME("            ", functions);
     const size_t functionCount = stats.functions.size();
@@ -443,6 +582,8 @@ static void displayHelp(const char* argv0)
     printf("  --timetrace: record compiler time tracing information into trace.json\n");
     printf("  --record-stats=<granularity>: granularity of compilation stats (total, file, function).\n");
     printf("  --bytecode-summary: Compute bytecode operation distribution.\n");
+    printf("  --ir-detail: analyse the lowered IR and print where the output goes.\n");
+    printf("  --ir-detail-raw: also write the raw per-command and def-use counters into the stats file.\n");
     printf("  --dump-constants: Dump constant table for each function (text mode only).\n");
     printf("  --dump-regspills: include register spill events in codegen output.\n");
     printf("  --stats-file=<filename>: file in which compilation stats will be recored (default 'stats.json').\n");
@@ -495,6 +636,8 @@ int main(int argc, char** argv)
     RecordStats recordStats = RecordStats::None;
     std::string statsFile("stats.json");
     bool bytecodeSummary = false;
+    bool irDetail = false;
+    bool irDetailRaw = false;
     bool dumpConstants = false;
 
     for (int i = 1; i < argc; i++)
@@ -575,6 +718,15 @@ int main(int argc, char** argv)
         else if (strncmp(argv[i], "--bytecode-summary", 18) == 0)
         {
             bytecodeSummary = true;
+        }
+        else if (strcmp(argv[i], "--ir-detail") == 0)
+        {
+            irDetail = true;
+        }
+        else if (strcmp(argv[i], "--ir-detail-raw") == 0)
+        {
+            irDetail = true;
+            irDetailRaw = true;
         }
         else if (strcmp(argv[i], "--dump-constants") == 0)
         {
@@ -660,7 +812,10 @@ int main(int argc, char** argv)
 
     int failed = 0;
     unsigned functionStats = (recordStats == RecordStats::Function ? Luau::CodeGen::FunctionStats_Enable : 0) |
-                             (bytecodeSummary ? Luau::CodeGen::FunctionStats_BytecodeSummary : 0);
+                             (bytecodeSummary ? Luau::CodeGen::FunctionStats_BytecodeSummary : 0) |
+                             (irDetail ? Luau::CodeGen::FunctionStats_IrDetail : 0);
+
+    g_serializeIrDetailRaw = irDetailRaw;
     for (const std::string& path : files)
     {
         CompileStats fileStat = {};
@@ -705,6 +860,9 @@ int main(int argc, char** argv)
             stats.lowerStats.maxSpillSlotsUsed
         );
     }
+
+    if (irDetail)
+        printf("\n%s", Luau::CodeGen::reportIrDetail(stats.lowerStats.irDetail).c_str());
 
     if (recordStats != RecordStats::None)
     {
