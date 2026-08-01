@@ -28,6 +28,7 @@ LUAU_FLAGVERSION(LuauCodegenLinearNoCall, 2)
 LUAU_FASTFLAGVARIABLE(LuauCodegenSubstituteReplacements)
 LUAU_FASTFLAGVARIABLE(LuauCodegenConstVectorBufferRead)
 LUAU_FASTFLAGVARIABLE(LuauCodegenOriginVerifyMatch)
+LUAU_FASTFLAGVARIABLE(LuauCodegenMergeConvertedBufferChecks)
 
 namespace Luau
 {
@@ -807,6 +808,34 @@ struct ConstPropState
         return base;
     }
 
+    // What an index ultimately rests on, looking through the conversions between the double and integer domains.
+    // Constant propagation collapses a plain index through its round trip, while a sibling carrying a constant offset
+    // keeps its conversion because an addition sits in the middle, so two accesses off one base arrive in different
+    // shapes and stop looking related.
+    BufferAccessBase getConvertedOffsetBase(IrOp value)
+    {
+        BufferAccessBase base = getOffsetBase(value);
+
+        while (base.op.kind == IrOpKind::Inst)
+        {
+            IrInst& inst = function.instOp(base.op);
+
+            if (inst.cmd != IrCmd::NUM_TO_INT && inst.cmd != IrCmd::UINT_TO_NUM && inst.cmd != IrCmd::TRUNCATE_UINT)
+                break;
+
+            if (OPT_OP_A(inst).kind != IrOpKind::Inst)
+                break;
+
+            BufferAccessBase inner = getOffsetBase(OP_A(inst));
+
+            base.offset += inner.offset * base.scale;
+            base.scale *= inner.scale;
+            base.op = inner.op;
+        }
+
+        return base;
+    }
+
     // Update current offset computation to be based on previous CHECK_BUFFER_LEN base and update min/max range of that check
     bool tryMergeAndKillBufferLengthCheck(IrBuilder& build, IrBlock& block, IrInst& currCheck, IrInst& prevCheck, int extraOffset)
     {
@@ -895,6 +924,18 @@ struct ConstPropState
 
                 return tryMergeAndKillBufferLengthCheck(build, block, inst, prev, extraOffset);
             }
+        }
+
+        // Neither shape matched, which happens when the two indices were canonicalized differently. Compare what they
+        // rest on instead. Only the ranges are merged here: neither index is rewritten, so no arithmetic crosses a
+        // conversion and the surviving check still forms its bound in 64 bits.
+        if (FFlag::LuauCodegenMergeConvertedBufferChecks)
+        {
+            BufferAccessBase convCurr = getConvertedOffsetBase(OP_B(inst));
+            BufferAccessBase convPrev = getConvertedOffsetBase(OP_B(prev));
+
+            if (convCurr.op == convPrev.op && convCurr.scale == convPrev.scale && convCurr.op.kind != IrOpKind::Constant)
+                return tryMergeAndKillBufferLengthCheck(build, block, inst, prev, convCurr.offset - convPrev.offset);
         }
 
         return false;
