@@ -25,6 +25,7 @@ LUAU_FASTINTVARIABLE(LuauCodeGenLiveSlotReuseLimit, 8)
 LUAU_FASTFLAGVARIABLE(DebugLuauAbortingChecks)
 LUAU_FASTFLAGVARIABLE(LuauCodegenSubstituteReplacements)
 LUAU_FASTFLAGVARIABLE(LuauCodegenConstVectorBufferRead)
+LUAU_FASTFLAGVARIABLE(LuauCodegenFuseIntegerCompareJump)
 
 namespace Luau
 {
@@ -1575,6 +1576,37 @@ static void handleBuiltinEffects(ConstPropState& state, LuauBuiltinFunction bfid
     state.invalidateRegistersFrom(firstReturnReg);
 }
 
+// Rewrite a branch that dispatches on the boolean of an int64 comparison into a fused compare and jump.
+// whenTrue and whenFalse are the branch's targets for the comparison holding or not.
+static void tryFuseInt64CompareIntoJump(
+    ConstPropState& state,
+    IrFunction& function,
+    IrBlock& block,
+    uint32_t index,
+    IrInst& inst,
+    IrOp whenTrue,
+    IrOp whenFalse
+)
+{
+    if (!FFlag::LuauCodegenFuseIntegerCompareJump)
+        return;
+
+    // Keyed on the register's current version, so it answers only while the register still holds what was stored.
+    auto [loadCmd, valueIdx] = state.getPreviousVersionedLoadForTag(LUA_TBOOLEAN, OP_A(inst));
+
+    if (loadCmd != IrCmd::LOAD_INT || valueIdx == kInvalidInstIdx)
+        return;
+
+    IrInst& source = function.instructions[valueIdx];
+
+    if (source.cmd != IrCmd::CMP_INT64)
+        return;
+
+    // The comparison itself is left in place. It is dead once nothing reads the boolean, and when something still
+    // does, repeating the compare here is cheaper than loading that boolean back and dispatching on its tag.
+    replace(function, block, index, {IrCmd::JUMP_CMP_INT64, {OP_A(source), OP_B(source), OP_C(source), whenTrue, whenFalse}});
+}
+
 static void constPropInInst(ConstPropState& state, IrBuilder& build, IrFunction& function, IrBlock& block, IrInst& inst, uint32_t index)
 {
     state.instPos++;
@@ -2101,6 +2133,8 @@ static void constPropInInst(ConstPropState& state, IrBuilder& build, IrFunction&
                 replace(function, block, index, {IrCmd::JUMP, {OP_C(inst)}});
             else if (tag != LUA_TBOOLEAN)
                 replace(function, block, index, {IrCmd::JUMP, {OP_B(inst)}});
+            else if (tag == LUA_TBOOLEAN)
+                tryFuseInt64CompareIntoJump(state, function, block, index, inst, OP_B(inst), OP_C(inst));
         }
         break;
     case IrCmd::JUMP_IF_FALSY:
@@ -2110,6 +2144,9 @@ static void constPropInInst(ConstPropState& state, IrBuilder& build, IrFunction&
                 replace(function, block, index, {IrCmd::JUMP, {OP_B(inst)}});
             else if (tag != LUA_TBOOLEAN)
                 replace(function, block, index, {IrCmd::JUMP, {OP_C(inst)}});
+            // The boolean is true exactly when the comparison held, and a falsy jump takes B in the other case.
+            else if (tag == LUA_TBOOLEAN)
+                tryFuseInt64CompareIntoJump(state, function, block, index, inst, OP_C(inst), OP_B(inst));
         }
         break;
     case IrCmd::JUMP_EQ_TAG:
