@@ -5240,7 +5240,7 @@ bb_bytecode_3:
     );
 }
 
-TEST_CASE_FIXTURE(LoweringFixture, "BufferRelatedIndicesPositiveBase")
+TEST_CASE_FIXTURE(LoweringFixture, "BufferOffsetFoldPositiveBase")
 {
     CHECK_EQ(
         "\n" + getCodegenAssembly(R"(
@@ -5278,7 +5278,7 @@ bb_bytecode_1:
     );
 }
 
-TEST_CASE_FIXTURE(LoweringFixture, "BufferRelatedIndicesPositiveBaseInverted")
+TEST_CASE_FIXTURE(LoweringFixture, "BufferOffsetFoldPositiveBaseInverted")
 {
     CHECK_EQ(
         "\n" + getCodegenAssembly(R"(
@@ -5317,7 +5317,7 @@ bb_bytecode_1:
 )"
     );
 }
-TEST_CASE_FIXTURE(LoweringFixture, "BufferRelatedIndicesPositiveDynamicBase")
+TEST_CASE_FIXTURE(LoweringFixture, "BufferOffsetFoldPositiveDynamicBase")
 {
     CHECK_EQ(
         "\n" + getCodegenAssembly(R"(
@@ -5363,7 +5363,7 @@ bb_bytecode_1:
     );
 }
 
-TEST_CASE_FIXTURE(LoweringFixture, "BufferRelatedIndicesPositiveLoopRangeBase")
+TEST_CASE_FIXTURE(LoweringFixture, "BufferOffsetFoldPositiveLoopRangeBase")
 {
     ScopedFastFlag callFb{FFlag::LuauCallFeedback, true};
     ScopedFastFlag emitCallFb{FFlag::LuauEmitCallFeedback, true};
@@ -5447,7 +5447,7 @@ bb_bytecode_3:
     );
 }
 
-TEST_CASE_FIXTURE(LoweringFixture, "BufferRelatedIndicesPositiveAdvancingBase")
+TEST_CASE_FIXTURE(LoweringFixture, "BufferOffsetFoldPositiveAdvancingBase")
 {
     CHECK_EQ(
         "\n" + getCodegenAssembly(R"(
@@ -5498,7 +5498,7 @@ bb_bytecode_1:
     );
 }
 
-TEST_CASE_FIXTURE(LoweringFixture, "BufferRelatedIndicesNegativeBase")
+TEST_CASE_FIXTURE(LoweringFixture, "BufferOffsetFoldNegativeBase")
 {
     CHECK_EQ(
         "\n" + getCodegenAssembly(R"(
@@ -5538,7 +5538,7 @@ bb_bytecode_1:
     );
 }
 
-TEST_CASE_FIXTURE(LoweringFixture, "BufferRelatedIndicesMixedBase")
+TEST_CASE_FIXTURE(LoweringFixture, "BufferOffsetFoldMixedBase")
 {
     CHECK_EQ(
         "\n" + getCodegenAssembly(R"(
@@ -5727,7 +5727,7 @@ bb_bytecode_1:
     );
 }
 
-TEST_CASE_FIXTURE(LoweringFixture, "BufferRelatedIndicesPositiveMultBase")
+TEST_CASE_FIXTURE(LoweringFixture, "BufferOffsetFoldPositiveMultBase")
 {
     CHECK_EQ(
         "\n" + getCodegenAssembly(R"(
@@ -5767,7 +5767,7 @@ bb_bytecode_1:
     );
 }
 
-TEST_CASE_FIXTURE(LoweringFixture, "BufferRelatedIndicesPositiveMultBase2")
+TEST_CASE_FIXTURE(LoweringFixture, "BufferOffsetFoldPositiveMultBase2")
 {
     // Different index multipliers are not merged
     CHECK_EQ(
@@ -5810,8 +5810,10 @@ bb_bytecode_1:
     );
 }
 
-TEST_CASE_FIXTURE(LoweringFixture, "BufferRelatedIndicesPositiveMultBaseInt")
+TEST_CASE_FIXTURE(LoweringFixture, "BufferOffsetFoldPositiveMultBaseInt")
 {
+    // The check indexes the truncated value while the offset accesses keep the untruncated one. Both name the same
+    // 32 bit index, so all three fold onto the register the check bounded. The adds survive as the locals they are.
     CHECK_EQ(
         "\n" + getCodegenAssembly(R"(
 local function foo(buf: buffer, a: number)
@@ -5841,9 +5843,9 @@ bb_bytecode_1:
   CHECK_BUFFER_LEN %56, %58, 0i, 24i, undef, bb_exit_9
    ; exit sync: R4, R3, R2, {%44, %27, %10}
   %60 = BUFFER_READF64 %56, %58, tbuffer
-  %73 = BUFFER_READF64 %56, %27, tbuffer
+  %73 = BUFFER_READF64 %56, %58, tbuffer, 8i
   %83 = ADD_NUM %60, %73
-  %95 = BUFFER_READF64 %56, %44, tbuffer
+  %95 = BUFFER_READF64 %56, %58, tbuffer, 16i
   %105 = ADD_NUM %83, %95
   STORE_SPLIT_TVALUE R5, tnumber, %105
   INTERRUPT 44u
@@ -5852,7 +5854,7 @@ bb_bytecode_1:
     );
 }
 
-TEST_CASE_FIXTURE(LoweringFixture, "BufferRelatedIndicesMixedSizes")
+TEST_CASE_FIXTURE(LoweringFixture, "BufferOffsetFoldMixedSizes")
 {
     CHECK_EQ(
         "\n" + getCodegenAssembly(R"(
@@ -5891,7 +5893,7 @@ bb_bytecode_1:
 
 // One offset shared by two buffers: each buffer's own length check is what authorizes folding that offset into its
 // accesses, so the fold has to be decided per (buffer, base) pair rather than per add
-TEST_CASE_FIXTURE(LoweringFixture, "BufferRelatedIndicesTwoBuffers")
+TEST_CASE_FIXTURE(LoweringFixture, "BufferOffsetFoldTwoBuffers")
 {
     CHECK_EQ(
         "\n" + getCodegenAssembly(R"(
@@ -5948,7 +5950,7 @@ bb_bytecode_1:
 //   +2048  aligned and 2056 / 8 is inside the scaled range, so it folds
 //   +2049  unaligned and 2057 is past the unscaled range, so neither fits and the add stays
 // x64 folds all three, which is why this compares the a64 text.
-TEST_CASE_FIXTURE(LoweringFixture, "BufferRelatedIndicesUnencodableA64")
+TEST_CASE_FIXTURE(LoweringFixture, "BufferOffsetFoldUnencodableA64")
 {
     compareA64 = true;
 
@@ -5990,7 +5992,7 @@ bb_bytecode_1:
     );
 }
 
-TEST_CASE_FIXTURE(LoweringFixture, "BufferRelatedIndicesUncheckedBase")
+TEST_CASE_FIXTURE(LoweringFixture, "BufferOffsetFoldUncheckedBase")
 {
     // The wrap mask is the point. `bit32.band(x + c, 0xFFFFFFFF)` asks for the add to wrap at 32 bits, which is what
     // narrows it to ADD_INT, and the bounds check then lands on the wrapped sum rather than on the shift feeding it.
@@ -5998,10 +6000,8 @@ TEST_CASE_FIXTURE(LoweringFixture, "BufferRelatedIndicesUncheckedBase")
     // shift reaching the top of the range would pass the check on its small wrapped index and read far outside the
     // buffer. The ADD_INT has to survive, and the access has to keep indexing off the value that was checked.
     //
-    // The shift is load-bearing and must not be "simplified". A base spelled bit32.bor(k, 0) lowers to NUM_TO_UINT,
-    // which producesDirtyHighRegisterBits already rejects one step earlier, so the fold would be declined for an
-    // unrelated reason and this case would keep passing with the validated-base check deleted. BITLSHIFT_UINT is clean,
-    // so the validated-base lookup is what refuses, which is the thing under test.
+    // The fold may only index the register the check itself bounded, which here is the one the access already uses, so
+    // there is nothing to rewrite and the shift never becomes an address base.
     CHECK_EQ(
         "\n" + getCodegenAssembly(R"(
 local function foo(mem: buffer, k: number)
@@ -6031,6 +6031,136 @@ bb_bytecode_1:
   STORE_TAG R2, tnumber
   INTERRUPT 20u
   RETURN R2, 1i
+)"
+    );
+}
+
+TEST_CASE_FIXTURE(LoweringFixture, "BufferOffsetFoldWrappedOffsetAnchor")
+{
+    // No access here names the value the others are offsets from, so the merged check anchors at the first one rather
+    // than at that value. Measuring both the check and the accesses from the same peeled-down index is what lets the
+    // later ones fold onto an anchor that is itself an offset.
+    CHECK_EQ(
+        "\n" + getCodegenAssembly(R"(
+local function foo(b: buffer, raw: number)
+    local i = bit32.band(raw, 0xFFFFFFFF)
+    return buffer.readu8(b, bit32.band(i + 8, 0xFFFFFFFF))
+        + buffer.readu8(b, bit32.band(i + 12, 0xFFFFFFFF))
+        + buffer.readu8(b, bit32.band(i + 16, 0xFFFFFFFF))
+end
+)"),
+        R"(
+; function foo($arg0, $arg1) line 2
+bb_0:
+  CHECK_TAG R0, tbuffer, exit(entry)
+  CHECK_TAG R1, tnumber, exit(entry)
+  JUMP bb_2
+bb_2:
+  JUMP bb_bytecode_1
+bb_bytecode_1:
+  implicit CHECK_SAFE_ENV exit(0)
+  %9 = LOAD_DOUBLE R1
+  %10 = NUM_TO_UINT %9
+  %27 = ADD_INT %10, 8i
+  %39 = LOAD_POINTER R0
+  CHECK_BUFFER_LEN %39, %27, 0i, 9i, undef, bb_exit_10
+   ; exit sync: R7, R2, {%27, %10}
+  %43 = BUFFER_READU8 %39, %27, tbuffer
+  %44 = INT_TO_NUM %43
+  %74 = BUFFER_READU8 %39, %27, tbuffer, 4i
+  %75 = INT_TO_NUM %74
+  %85 = ADD_NUM %44, %75
+  %114 = BUFFER_READU8 %39, %27, tbuffer, 8i
+  %115 = INT_TO_NUM %114
+  %125 = ADD_NUM %85, %115
+  STORE_DOUBLE R3, %125
+  STORE_TAG R3, tnumber
+  INTERRUPT 48u
+  RETURN R3, 1i
+)"
+    );
+}
+
+TEST_CASE_FIXTURE(LoweringFixture, "BufferOffsetFoldWrappedBaseAnchor")
+{
+    // Same shape with the anchor at the value itself, so the folded displacements are the offsets as written.
+    CHECK_EQ(
+        "\n" + getCodegenAssembly(R"(
+local function foo(b: buffer, raw: number)
+    local i = bit32.band(raw, 0xFFFFFFFF)
+    return buffer.readu8(b, i)
+        + buffer.readu8(b, bit32.band(i + 4, 0xFFFFFFFF))
+        + buffer.readu8(b, bit32.band(i + 8, 0xFFFFFFFF))
+end
+)"),
+        R"(
+; function foo($arg0, $arg1) line 2
+bb_0:
+  CHECK_TAG R0, tbuffer, exit(entry)
+  CHECK_TAG R1, tnumber, exit(entry)
+  JUMP bb_2
+bb_2:
+  JUMP bb_bytecode_1
+bb_bytecode_1:
+  implicit CHECK_SAFE_ENV exit(0)
+  %9 = LOAD_DOUBLE R1
+  %10 = NUM_TO_UINT %9
+  %22 = LOAD_POINTER R0
+  %24 = TRUNCATE_UINT %10
+  CHECK_BUFFER_LEN %22, %24, 0i, 9i, undef, bb_exit_9
+   ; exit sync: R2, {%10}
+  %26 = BUFFER_READU8 %22, %24, tbuffer
+  %27 = INT_TO_NUM %26
+  %57 = BUFFER_READU8 %22, %24, tbuffer, 4i
+  %58 = INT_TO_NUM %57
+  %68 = ADD_NUM %27, %58
+  %97 = BUFFER_READU8 %22, %24, tbuffer, 8i
+  %98 = INT_TO_NUM %97
+  %108 = ADD_NUM %68, %98
+  STORE_DOUBLE R3, %108
+  STORE_TAG R3, tnumber
+  INTERRUPT 42u
+  RETURN R3, 1i
+)"
+    );
+}
+
+TEST_CASE_FIXTURE(LoweringFixture, "BufferOffsetFoldSubtractedIndex")
+{
+    // A subtracted constant displaces the index exactly as an added one does, and constant propagation already treats
+    // it that way when it merges the checks, so the check taken on the subtracted value has to cover the other access.
+    CHECK_EQ(
+        "\n" + getCodegenAssembly(R"(
+local function foo(b: buffer, raw: number)
+    local i = bit32.band(raw, 0xFFFFFFFF)
+    return buffer.readu8(b, bit32.band(i - 4, 0xFFFFFFFF)) + buffer.readu8(b, bit32.band(i - 2, 0xFFFFFFFF))
+end
+)"),
+        R"(
+; function foo($arg0, $arg1) line 2
+bb_0:
+  CHECK_TAG R0, tbuffer, exit(entry)
+  CHECK_TAG R1, tnumber, exit(entry)
+  JUMP bb_2
+bb_2:
+  JUMP bb_bytecode_1
+bb_bytecode_1:
+  implicit CHECK_SAFE_ENV exit(0)
+  %9 = LOAD_DOUBLE R1
+  %10 = NUM_TO_UINT %9
+  %27 = SUB_INT %10, 4i
+  %39 = LOAD_POINTER R0
+  CHECK_BUFFER_LEN %39, %27, 0i, 3i, undef, bb_exit_8
+   ; exit sync: R6, R2, {%27, %10}
+  %43 = BUFFER_READU8 %39, %27, tbuffer
+  %44 = INT_TO_NUM %43
+  %74 = BUFFER_READU8 %39, %27, tbuffer, 2i
+  %75 = INT_TO_NUM %74
+  %85 = ADD_NUM %44, %75
+  STORE_DOUBLE R3, %85
+  STORE_TAG R3, tnumber
+  INTERRUPT 34u
+  RETURN R3, 1i
 )"
     );
 }
