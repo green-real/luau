@@ -21,6 +21,10 @@ declare _VERSION: string
 
 declare function gcinfo(): number
 
+-- wasm-luau fork: whether the function that called this one is running natively rather than as bytecode. Declared
+-- because the base library always exposes it, so leaving it out reports as a global missing type information.
+declare function is_native(): boolean
+
 declare function print<T...>(...: T...)
 
 declare function type<T>(value: T): string
