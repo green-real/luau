@@ -44,7 +44,13 @@ static bool isEncodableDisplacement(BufferOffsetTarget target, int effectiveOffs
 struct ValidatedBase
 {
     IrOp buffer;
+    // What the offsets are measured from. Checks and accesses match on this, not on the register each one named.
+    IrOp key;
+    // The register an access is rewritten to index. It is the one the check itself used, so its high bits are as
+    // clean as the check required. baseOffset is its distance from key.
     IrOp base;
+    int baseOffset = 0;
+    // Relative to key, not to base.
     int minOffset = 0;
     int maxOffset = 0;
 };
@@ -71,11 +77,57 @@ struct BufferOffsetFolder
     unsigned uncoveredCount = 0;
     unsigned unencodableCount = 0;
 
-    const ValidatedBase* findValidated(IrOp buffer, IrOp base) const
+    // The value an index register denotes and its distance from it. A truncation is safe to look through because it is
+    // inserted only where the low 32 bits are already the value. Only a constant on SUB_INT's right displaces the
+    // value; 'K - x' negates it.
+    IrOp indexKey(IrOp op, int& offset)
+    {
+        offset = 0;
+
+        for (int depth = 0; depth < 8 && op.kind == IrOpKind::Inst; depth++)
+        {
+            IrInst& inst = function.instructions[op.index];
+
+            int64_t delta = 0;
+            IrOp next = {};
+
+            if (inst.cmd == IrCmd::ADD_INT && OP_A(inst).kind == IrOpKind::Inst && OP_B(inst).kind == IrOpKind::Constant)
+            {
+                delta = function.intOp(OP_B(inst));
+                next = OP_A(inst);
+            }
+            else if (inst.cmd == IrCmd::SUB_INT && OP_A(inst).kind == IrOpKind::Inst && OP_B(inst).kind == IrOpKind::Constant)
+            {
+                delta = -int64_t(function.intOp(OP_B(inst)));
+                next = OP_A(inst);
+            }
+            else if (inst.cmd == IrCmd::TRUNCATE_UINT && OP_A(inst).kind == IrOpKind::Inst)
+            {
+                op = OP_A(inst);
+                continue;
+            }
+            else
+            {
+                break;
+            }
+
+            const int64_t moved = int64_t(offset) + delta;
+
+            if (moved > kMaxAccumulatedOffset || moved < -kMaxAccumulatedOffset)
+                break;
+
+            offset = int(moved);
+            op = next;
+        }
+
+        return op;
+    }
+
+    const ValidatedBase* findValidated(IrOp buffer, IrOp key) const
     {
         for (const ValidatedBase& entry : validated)
         {
-            if (entry.buffer == buffer && entry.base == base)
+            if (entry.buffer == buffer && entry.key == key)
                 return &entry;
         }
 
@@ -93,22 +145,29 @@ struct BufferOffsetFolder
         int minOffset = function.intOp(OP_C(inst));
         int maxOffset = function.intOp(OP_D(inst));
 
+        // Recorded against the key rather than the register this check happened to index, so a later access measuring
+        // from the same key compares against them directly.
+        int baseOffset = 0;
+        const IrOp key = indexKey(OP_B(inst), baseOffset);
+        const int keyMin = minOffset + baseOffset;
+        const int keyMax = maxOffset + baseOffset;
+
         for (ValidatedBase& entry : validated)
         {
-            if (entry.buffer == OP_A(inst) && entry.base == OP_B(inst))
+            if (entry.buffer == OP_A(inst) && entry.key == key)
             {
                 // Both checks have passed, so the weaker end of each bound still holds
-                if (minOffset < entry.minOffset)
-                    entry.minOffset = minOffset;
+                if (keyMin < entry.minOffset)
+                    entry.minOffset = keyMin;
 
-                if (maxOffset > entry.maxOffset)
-                    entry.maxOffset = maxOffset;
+                if (keyMax > entry.maxOffset)
+                    entry.maxOffset = keyMax;
 
                 return;
             }
         }
 
-        validated.push_back(ValidatedBase{OP_A(inst), OP_B(inst), minOffset, maxOffset});
+        validated.push_back(ValidatedBase{OP_A(inst), key, OP_B(inst), baseOffset, keyMin, keyMax});
     }
 
     void tryFoldAccess(IrInst& inst)
@@ -125,66 +184,39 @@ struct BufferOffsetFolder
         // needed once one is found.
         IrInst* head = function.asInstOp(OP_B(inst));
 
-        if (!head || head->cmd != IrCmd::ADD_INT)
+        if (!head || (head->cmd != IrCmd::ADD_INT && head->cmd != IrCmd::SUB_INT))
             return;
 
         int dataOffset = getTagDataOffset(function.tagOp(getOp(inst, shape.tagSlot)));
 
-        // Constant propagation rebases an access onto the previous check's operand, so an index can be a short chain
-        // of them. Take the deepest base a check validated: the shared inner add only dies once every access hanging
-        // off it has moved past it.
-        IrOp current = OP_B(inst);
-        int64_t accumulated = 0;
+        int indexOffset = 0;
+        const IrOp key = indexKey(OP_B(inst), indexOffset);
 
-        IrOp foldBase = {};
-        int foldOffset = 0;
-        bool found = false;
-        bool sawAdd = false;
+        const ValidatedBase* entry = findValidated(OP_A(inst), key);
 
-        for (int depth = 0; depth < 8; depth++)
+        if (!entry || indexOffset < entry->minOffset || indexOffset + shape.accessSize > entry->maxOffset)
         {
-            IrInst* add = function.asInstOp(current);
-
-            if (!add || add->cmd != IrCmd::ADD_INT || OP_A(*add).kind != IrOpKind::Inst || OP_B(*add).kind != IrOpKind::Constant)
-                break;
-
-            sawAdd = true;
-            accumulated += function.intOp(OP_B(*add));
-            current = OP_A(*add);
-
-            if (accumulated > kMaxAccumulatedOffset || accumulated < -kMaxAccumulatedOffset)
-                break;
-
-            // The lowering reads the index register as a zero extended 32 bit value, same as the check did
-            if (producesDirtyHighRegisterBits(function.instOp(current).cmd))
-                break;
-
-            const ValidatedBase* entry = findValidated(OP_A(inst), current);
-
-            if (!entry || accumulated < entry->minOffset || accumulated + shape.accessSize > entry->maxOffset)
-                continue;
-
-            if (!isEncodableDisplacement(target, int(accumulated) + dataOffset, shape.accessSize))
-            {
-                unencodableCount++;
-                continue;
-            }
-
-            foldBase = current;
-            foldOffset = int(accumulated);
-            found = true;
+            uncoveredCount++;
+            return;
         }
 
-        if (!found)
-        {
-            if (sawAdd)
-                uncoveredCount++;
+        // Rewritten to index the register the check itself used, so the displacement is measured from there.
+        const int displacement = indexOffset - entry->baseOffset;
+        const IrOp foldBase = entry->base;
 
+        // Nothing is gained when the access already indexes that register at that displacement: the rewrite would
+        // reproduce the instruction, and the add it was reached through keeps the check as a user either way.
+        if (displacement == 0 && foldBase == OP_B(inst))
+            return;
+
+        if (!isEncodableDisplacement(target, displacement + dataOffset, shape.accessSize))
+        {
+            unencodableCount++;
             return;
         }
 
         // Set the displacement first: it can grow the operand vector, which invalidates references into it
-        getOp(inst, shape.dispSlot) = build.constInt(foldOffset);
+        getOp(inst, shape.dispSlot) = build.constInt(displacement);
 
         replace(function, OP_B(inst), foldBase);
 
