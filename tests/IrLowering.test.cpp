@@ -8806,6 +8806,8 @@ bb_bytecode_1:
 )"
     );
 }
+
+
 TEST_CASE_FIXTURE(LoweringFixture, "IntegerCompare")
 {
     ScopedFastFlag luauIntegerFastcalls{FFlag::LuauIntegerFastcalls, true};

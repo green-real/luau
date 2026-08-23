@@ -28,9 +28,9 @@ LUAU_FLAGVERSION(LuauCodegenLinearNoCall, 2)
 LUAU_FASTFLAGVARIABLE(LuauCodegenSubstituteReplacements)
 LUAU_FASTFLAGVARIABLE(LuauCodegenConstVectorBufferRead)
 LUAU_FASTFLAGVARIABLE(LuauCodegenOriginVerifyMatch)
+LUAU_FASTFLAGVARIABLE(LuauCodegenPropagateFallbackTags)
 LUAU_FASTFLAGVARIABLE(LuauCodegenMergeConvertedBufferChecks)
 LUAU_FASTFLAGVARIABLE(LuauCodegenFuseIntegerCompareJump)
-LUAU_FASTFLAGVARIABLE(LuauCodegenPropagateFallbackTags)
 
 namespace Luau
 {
