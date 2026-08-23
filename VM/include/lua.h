@@ -251,6 +251,10 @@ LUA_API void lua_call(lua_State* L, int nargs, int nresults);
 LUA_API int lua_pcall(lua_State* L, int nargs, int nresults, int errfunc);
 LUA_API int lua_cpcall(lua_State* L, lua_CFunction func, void* ud);
 
+// wrapper for making calls from yieldable C functions
+LUA_API int lua_callyieldable(lua_State* L, int nargs, int nresults);
+LUA_API int lua_pcallyieldable(lua_State* L, int nargs, int nresults, int errfunc);
+
 /*
 ** coroutine functions
 */
@@ -408,7 +412,7 @@ LUA_API int lua_weakref(lua_State* L, int idx);
 LUA_API int lua_weakunref(lua_State* L, int ref);
 LUA_API int lua_getweakref(lua_State* L, int ref); // returns the type of the value pushed onto the stack
 
-// alternative access for metatables already registered with luaL_newmetatable (remove this restriction with FFlagLuauUdataMetatablePinned)
+// alternative access for userdata metatables
 // used by lua_newuserdatataggedwithmetatable to create tagged userdata with the associated metatable assigned
 LUA_API void lua_setuserdatametatable(lua_State* L, int tag);
 LUA_API void lua_getuserdatametatable(lua_State* L, int tag);
@@ -565,6 +569,8 @@ struct lua_Debug
     const char* short_src; // (s)
     int linedefined;       // (s)
     int currentline;       // (l)
+    int protoid;           // (p) globally unique (within VM) proto id; 0 for C functions
+    int bytecodeid;        // (p) proto index within its bytecode module; -1 for C functions
     unsigned char nupvals; // (u) number of upvalues
     unsigned char nparams; // (a) number of parameters
     char isvararg;         // (a)
@@ -608,6 +614,9 @@ struct lua_Callbacks
     void (*debugprotectederror)(lua_State* L);           // gets called when protected call results in an error
 
     void (*onallocate)(lua_State* L, size_t osize, size_t nsize); // gets called when memory is allocated
+
+    void (*preresume)(lua_State* L);  // gets called before lua_resume runs a (co)routine
+    void (*postresume)(lua_State* L); // gets called after lua_resume returns (yield, return, or error)
 };
 typedef struct lua_Callbacks lua_Callbacks;
 

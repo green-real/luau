@@ -11,9 +11,8 @@ using namespace Luau;
 
 LUAU_FASTFLAG(DebugLuauForceOldSolver)
 LUAU_FASTFLAG(LuauDisallowRedefiningBuiltinTypes)
-LUAU_FASTFLAG(LuauAvoidCascadingRecursiveConstraintViolationError)
-LUAU_FASTFLAG(LuauFixInfiniteTypeRedundantBind)
-LUAU_FASTFLAG(LuauDoNotEmplaceAnnotatedType)
+LUAU_FASTFLAG(LuauInstantiationCheckArguments)
+LUAU_FASTFLAG(LuauInstantiationCheckArgumentsDedup)
 
 TEST_SUITE_BEGIN("TypeAliases");
 
@@ -698,8 +697,6 @@ TEST_CASE_FIXTURE(Fixture, "mutually_recursive_types_restriction_ok")
 
 TEST_CASE_FIXTURE(Fixture, "mutually_recursive_types_restriction_not_ok_1")
 {
-    ScopedFastFlag _{FFlag::LuauFixInfiniteTypeRedundantBind, true};
-
     CheckResult result = check(R"(
         -- OK because forwarded types are used with their parameters.
         type Tree<T> = { data: T, children: Forest<T> }
@@ -711,8 +708,6 @@ TEST_CASE_FIXTURE(Fixture, "mutually_recursive_types_restriction_not_ok_1")
 
 TEST_CASE_FIXTURE(Fixture, "mutually_recursive_types_restriction_not_ok_2")
 {
-    ScopedFastFlag _{FFlag::LuauFixInfiniteTypeRedundantBind, true};
-
     CheckResult result = check(R"(
         -- Not OK because forwarded types are used with different types than their parameters.
         type Forest<T> = {Tree<{T}>}
@@ -734,8 +729,6 @@ TEST_CASE_FIXTURE(Fixture, "mutually_recursive_types_swapsies_ok")
 
 TEST_CASE_FIXTURE(Fixture, "mutually_recursive_types_swapsies_not_ok")
 {
-    ScopedFastFlag _{FFlag::LuauFixInfiniteTypeRedundantBind, true};
-
     CheckResult result = check(R"(
         type Tree1<T,U> = { data: T, children: {Tree2<U,T>} }
         type Tree2<T,U> = { data: U, children: {Tree1<T,U>} }
@@ -1350,8 +1343,6 @@ TEST_CASE_FIXTURE(Fixture, "only_report_single_error_for_missing_generics_1")
 {
     DOES_NOT_PASS_OLD_SOLVER_GUARD();
 
-    ScopedFastFlag _{FFlag::LuauAvoidCascadingRecursiveConstraintViolationError, true};
-
     CheckResult results = check(R"(
         type t0<A> = {[t0]: t0<A>}
     )");
@@ -1363,8 +1354,6 @@ TEST_CASE_FIXTURE(Fixture, "only_report_single_error_for_missing_generics_1")
 TEST_CASE_FIXTURE(Fixture, "only_report_single_error_for_missing_generics_2")
 {
     DOES_NOT_PASS_OLD_SOLVER_GUARD();
-
-    ScopedFastFlag _{FFlag::LuauAvoidCascadingRecursiveConstraintViolationError, true};
 
     CheckResult results = check(R"(
         type Tree<A> = { [string]: Tree }
@@ -1378,7 +1367,6 @@ TEST_CASE_FIXTURE(Fixture, "cyclic_type_alias_through_generic_does_not_assert")
 {
     ScopedFastFlag sff[] = {
         {FFlag::DebugLuauForceOldSolver, false},
-        {FFlag::LuauFixInfiniteTypeRedundantBind, true},
     };
 
     // We had an issue where a generic type alias cycle caused the system to
@@ -1400,8 +1388,6 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "unpack_doesnt_emplace_typeof_type")
 {
     DOES_NOT_PASS_OLD_SOLVER_GUARD();
 
-    ScopedFastFlag _{FFlag::LuauDoNotEmplaceAnnotatedType, true};
-
     LUAU_REQUIRE_NO_ERRORS(check(R"(
         local Obj = {}
         
@@ -1414,6 +1400,70 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "unpack_doesnt_emplace_typeof_type")
         Obj.Foo = {}
         Obj.Foo.Bar = 42
     )"));
+}
+
+TEST_CASE_FIXTURE(BuiltinsFixture, "unused_type_arguments")
+{
+    ScopedFastFlag _{FFlag::LuauInstantiationCheckArguments, true};
+
+    LUAU_REQUIRE_NO_ERRORS(check(R"(
+        type Foo<T> = {}
+        export type Export<T> = {Foo<Foo<T>>}
+    )"));
+}
+
+TEST_CASE_FIXTURE(BuiltinsFixture, "type_argument_duplicate_pending_expansions")
+{
+    DOES_NOT_PASS_OLD_SOLVER_GUARD();
+
+    ScopedFastFlag luauInstantiationCheckArguments{FFlag::LuauInstantiationCheckArguments, true};
+    ScopedFastFlag luauInstantiationCheckArgumentsDedup{FFlag::LuauInstantiationCheckArgumentsDedup, true};
+
+    LUAU_REQUIRE_NO_ERRORS(check(R"_(
+type Sym<Kind = string> = { text: Kind }
+type Data<T, U> = { [number]: T, separators: { Sym<U> } }
+type MT<T, U> = { __iter: (Data<T, U>) -> (({ [number]: T }, number?) -> (number?, T), { T }) }
+type Combined<T, U> = setmetatable<Data<T, U>, MT<T, U>>
+
+type Instantiate0 = { typeArguments: Combined<Pack1 | Pack2 | Pack3 | Pack4, ","> }
+type Instantiate1 = { typeArguments: Combined<Pack1 | Pack2 | Pack3 | Pack4, ","> }
+type Instantiate2 = { typeArguments: Combined<Pack1 | Pack2 | Pack3 | Pack4, ","> }
+type Instantiate3 = { typeArguments: Combined<Pack1 | Pack2 | Pack3 | Pack4, ","> }
+type Instantiate4 = { typeArguments: Combined<Pack1 | Pack2 | Pack3 | Pack4, ","> }
+type Instantiate5 = { typeArguments: Combined<Pack1 | Pack2 | Pack3 | Pack4, ","> }
+type Instantiate6 = { typeArguments: Combined<Pack1 | Pack2 | Pack3 | Pack4, ","> }
+type Instantiate7 = { typeArguments: Combined<Pack1 | Pack2 | Pack3 | Pack4, ","> }
+type Instantiate8 = { typeArguments: Combined<Pack1 | Pack2 | Pack3 | Pack4, ","> }
+type Instantiate9 = { typeArguments: Combined<Pack1 | Pack2 | Pack3 | Pack4, ","> }
+
+type Pack1a = { a: Sym<"a">, b: Sym<"b">, c: Sym<"c">, d: Sym<"d">, e: Sym<"e">, f: Sym<"e"> }
+type Pack1b = { a: Sym<"a">, b: Sym<"b">, c: Sym<"c">, d: Sym<"d">, e: Sym<"e">, f: Sym<"e"> }
+type Pack1c = { a: Sym<"a">, b: Sym<"b">, c: Sym<"c">, d: Sym<"d">, e: Sym<"e">, f: Sym<"e"> }
+type Pack1d = { a: Sym<"a">, b: Sym<"b">, c: Sym<"c">, d: Sym<"d">, e: Sym<"e">, f: Sym<"e"> }
+type Pack1e = { a: Sym<"a">, b: Sym<"b">, c: Sym<"c">, d: Sym<"d">, e: Sym<"e">, f: Sym<"e"> }
+type Pack1 = Pack1a | Pack1b | Pack1c | Pack1d | Pack1e
+
+type Pack2a = { a: Sym<"a">, b: Sym<"b">, c: Sym<"c">, d: Sym<"d">, e: Sym<"e">, f: Sym<"e"> }
+type Pack2b = { a: Sym<"a">, b: Sym<"b">, c: Sym<"c">, d: Sym<"d">, e: Sym<"e">, f: Sym<"e"> }
+type Pack2c = { a: Sym<"a">, b: Sym<"b">, c: Sym<"c">, d: Sym<"d">, e: Sym<"e">, f: Sym<"e"> }
+type Pack2d = { a: Sym<"a">, b: Sym<"b">, c: Sym<"c">, d: Sym<"d">, e: Sym<"e">, f: Sym<"e"> }
+type Pack2e = { a: Sym<"a">, b: Sym<"b">, c: Sym<"c">, d: Sym<"d">, e: Sym<"e">, f: Sym<"e"> }
+type Pack2 = Pack2a | Pack2b | Pack2c | Pack2d | Pack2e
+
+type Pack3a = { a: Sym<"a">, b: Sym<"b">, c: Sym<"c">, d: Sym<"d">, e: Sym<"e">, f: Sym<"e"> }
+type Pack3b = { a: Sym<"a">, b: Sym<"b">, c: Sym<"c">, d: Sym<"d">, e: Sym<"e">, f: Sym<"e"> }
+type Pack3c = { a: Sym<"a">, b: Sym<"b">, c: Sym<"c">, d: Sym<"d">, e: Sym<"e">, f: Sym<"e"> }
+type Pack3d = { a: Sym<"a">, b: Sym<"b">, c: Sym<"c">, d: Sym<"d">, e: Sym<"e">, f: Sym<"e"> }
+type Pack3e = { a: Sym<"a">, b: Sym<"b">, c: Sym<"c">, d: Sym<"d">, e: Sym<"e">, f: Sym<"e"> }
+type Pack3 = Pack3a | Pack3b | Pack3c | Pack3d | Pack3e
+
+type Pack4a = { a: Sym<"a">, b: Sym<"b">, c: Sym<"c">, d: Sym<"d">, e: Sym<"e">, f: Sym<"e"> }
+type Pack4b = { a: Sym<"a">, b: Sym<"b">, c: Sym<"c">, d: Sym<"d">, e: Sym<"e">, f: Sym<"e"> }
+type Pack4c = { a: Sym<"a">, b: Sym<"b">, c: Sym<"c">, d: Sym<"d">, e: Sym<"e">, f: Sym<"e"> }
+type Pack4d = { a: Sym<"a">, b: Sym<"b">, c: Sym<"c">, d: Sym<"d">, e: Sym<"e">, f: Sym<"e"> }
+type Pack4e = { a: Sym<"a">, b: Sym<"b">, c: Sym<"c">, d: Sym<"d">, e: Sym<"e">, f: Sym<"e"> }
+type Pack4 = Pack4a | Pack4b | Pack4c | Pack4d | Pack4e
+    )_"));
 }
 
 TEST_SUITE_END();

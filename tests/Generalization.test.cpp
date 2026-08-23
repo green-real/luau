@@ -16,7 +16,7 @@ using namespace Luau;
 
 LUAU_FASTFLAG(DebugLuauForceOldSolver)
 LUAU_FASTFLAG(DebugLuauForbidInternalTypes)
-LUAU_FASTFLAG(LuauCollapseDirectBoundCycles)
+LUAU_FASTFLAG(LuauBetterInferredGenericNames)
 
 TEST_SUITE_BEGIN("Generalization");
 
@@ -28,8 +28,10 @@ struct GeneralizationFixture
     ScopePtr scope = std::make_shared<Scope>(globalScope);
     ToStringOptions opts;
 
-    DenseHashSet<TypeId> generalizedTypes_{nullptr};
-    NotNull<DenseHashSet<TypeId>> generalizedTypes{&generalizedTypes_};
+    ScopedFastFlag sff_LuauBetterInferredGenericNames{FFlag::LuauBetterInferredGenericNames, true};
+
+    DenseHashSet2<TypeId> generalizedTypes_;
+    NotNull<DenseHashSet2<TypeId>> generalizedTypes{&generalizedTypes_};
 
     ScopedFastFlag sff{FFlag::DebugLuauForceOldSolver, false};
 
@@ -223,7 +225,7 @@ TEST_CASE_FIXTURE(GeneralizationFixture, "('a) -> 'a")
 
     generalize(fnTy);
 
-    CHECK("<a>(a) -> a" == toString(fnTy));
+    CHECK("<T>(T) -> T" == toString(fnTy));
 }
 
 TEST_CASE_FIXTURE(GeneralizationFixture, "(t1, (t1 <: 'b)) -> () where t1 = ('a <: (t1 <: 'b) & {number} & {number})")
@@ -274,7 +276,7 @@ TEST_CASE_FIXTURE(GeneralizationFixture, "(('a <: {'b})) -> ()")
 
     // The free type 'b is not replace with unknown because it appears in an
     // invariant context.
-    CHECK("<a>({a}) -> ()" == toString(functionTy));
+    CHECK("<T>({T}) -> ()" == toString(functionTy));
 }
 
 TEST_CASE_FIXTURE(GeneralizationFixture, "(('b <: {t1}), ('a <: t1)) -> t1 where t1 = (('a <: t1) <: 'c)")
@@ -295,7 +297,7 @@ TEST_CASE_FIXTURE(GeneralizationFixture, "(('b <: {t1}), ('a <: t1)) -> t1 where
 
     generalize(functionTy);
 
-    CHECK("<a>({a}, a) -> a" == toString(functionTy));
+    CHECK("<T>({T}, T) -> T" == toString(functionTy));
 }
 
 TEST_CASE_FIXTURE(BuiltinsFixture, "generalization_traversal_should_re_traverse_unions_if_they_change_type")
@@ -470,8 +472,6 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "generalization_fuzzer_crash")
 
 TEST_CASE_FIXTURE(GeneralizationFixture, "collapse_two_type_direct_cycle")
 {
-    ScopedFastFlag sff2{FFlag::LuauCollapseDirectBoundCycles, true};
-
     auto [t1, ft1] = freshType();
     auto [t2, ft2] = freshType();
 
@@ -489,8 +489,6 @@ TEST_CASE_FIXTURE(GeneralizationFixture, "collapse_two_type_direct_cycle")
 
 TEST_CASE_FIXTURE(GeneralizationFixture, "collapse_cycle_with_external_bound")
 {
-    ScopedFastFlag sff2{FFlag::LuauCollapseDirectBoundCycles, true};
-
     auto [t1, ft1] = freshType();
     auto [t2, ft2] = freshType();
 
@@ -510,8 +508,6 @@ TEST_CASE_FIXTURE(GeneralizationFixture, "collapse_cycle_with_external_bound")
 
 TEST_CASE_FIXTURE(GeneralizationFixture, "collapse_cycle_with_external_bound_in_union")
 {
-    ScopedFastFlag sff2{FFlag::LuauCollapseDirectBoundCycles, true};
-
     auto [t1, ft1] = freshType();
     auto [t2, ft2] = freshType();
 
@@ -532,8 +528,6 @@ TEST_CASE_FIXTURE(GeneralizationFixture, "collapse_cycle_with_external_bound_in_
 
 TEST_CASE_FIXTURE(GeneralizationFixture, "no_spurious_cycle_through_intersection")
 {
-    ScopedFastFlag sff2{FFlag::LuauCollapseDirectBoundCycles, true};
-
     TableType tt;
     tt.indexer = TableIndexer{builtinTypes.numberType, builtinTypes.numberType};
     TypeId numberArray = arena.addType(TableType{tt});

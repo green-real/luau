@@ -13,7 +13,7 @@
 using namespace Luau;
 
 LUAU_FASTFLAG(DebugLuauForceOldSolver)
-LUAU_FASTFLAG(DebugLuauCyclicRequireTypeInference)
+LUAU_FASTFLAG(LuauCyclicRequireTypeInference)
 LUAU_FASTFLAG(LuauExportValueSyntax)
 LUAU_FASTFLAG(LuauExportValueTypecheck)
 LUAU_FASTINT(LuauNormalizeCacheLimit)
@@ -54,11 +54,11 @@ TEST_CASE_FIXTURE(Fixture, "typeguard_inference_incomplete")
     )";
 
     const std::string expected = R"(
-        function f(a:{fn:()->(a,b...)}): ()
+        function f(a:{fn:()->(T,U...)}): ()
             if type(a) == 'boolean' then
                 local a1:boolean=a
             elseif a.fn() then
-                local a2:{fn:()->(a,b...)}=a
+                local a2:{fn:()->(T,U...)}=a
             end
         end
     )";
@@ -313,7 +313,7 @@ TEST_CASE_FIXTURE(Fixture, "discriminate_from_x_not_equal_to_nil")
     }
 }
 
-TEST_CASE_FIXTURE(BuiltinsFixture, "bail_early_if_unification_is_too_complicated" * doctest::timeout(1.0))
+TEST_CASE_FIXTURE(BuiltinsFixture, "bail_early_if_unification_is_too_complicated" * doctest::timeout(LUAU_TIMEOUT))
 {
     // We have to force this test case up here before the flags kick in.
     // The reason for this is that while loading the builtins, the below flags will cause that
@@ -394,8 +394,8 @@ TEST_CASE_FIXTURE(Fixture, "do_not_ice_when_trying_to_pick_first_of_generic_type
     else
     {
         // f and g should have the type () -> ()
-        CHECK_EQ("() -> (a...)", toString(requireType("f")));
-        CHECK_EQ("<a...>() -> (a...)", toString(requireType("g")));
+        CHECK_EQ("() -> (T...)", toString(requireType("f")));
+        CHECK_EQ("<T...>() -> (T...)", toString(requireType("g")));
         CHECK_EQ("any", toString(requireType("x"))); // any is returned instead of ICE for now
     }
 }
@@ -1306,7 +1306,7 @@ TEST_CASE_FIXTURE(Fixture, "we_cannot_infer_functions_that_return_inconsistently
     {
         LUAU_CHECK_ERROR_COUNT(1, result);
 
-        CHECK("<T, b>({T}, b) -> number" == toString(requireType("find_first")));
+        CHECK("<T, U>({T}, U) -> number" == toString(requireType("find_first")));
     }
 #endif
 }
@@ -1662,79 +1662,6 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "cli_181248_unreduced_union_of_indexers")
 
     // We *probably* want to normalize this to `string`.
     CHECK_EQ("\"hi\" | string", toString(requireType("val")));
-}
-
-// Mimics cycle_detection_between_check_and_nocheck test, but with export statements instead of return statements.
-TEST_CASE_FIXTURE(BuiltinsFixture, "export_cycle_between_check_and_nocheck")
-{
-    ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauCyclicRequireTypeInference, true},
-        {FFlag::DebugLuauForceOldSolver, false},
-        {FFlag::LuauExportValueSyntax, true},
-        {FFlag::LuauExportValueTypecheck, true},
-    };
-
-    fileResolver.source["game/Gui/Modules/A"] = R"(
-        --!strict
-        local Modules = game:GetService('Gui').Modules
-        local B = require(Modules.B)
-        export local hello = B.hello
-    )";
-    fileResolver.source["game/Gui/Modules/B"] = R"(
-        --!nocheck
-        local Modules = game:GetService('Gui').Modules
-        local A = require(Modules.A)
-        export local hello = A.hello
-    )";
-
-    CheckResult result = getFrontend().check("game/Gui/Modules/A");
-
-    // An error is expected here because the type of `hello` in module A is `any`, but the type of `hello` in module B is `unknown`. This could be related to the below test case of generalization running between module constraints being solved, which will be a follow up PR fix (see test below).
-    LUAU_REQUIRE_ERROR_COUNT(1, result);
-    CHECK(get<UnknownProperty>(result.errors[0]));
-}
-
-// Mimics nocheck_cycle_used_by_checked test, but with export statements instead of return statements.
-TEST_CASE_FIXTURE(BuiltinsFixture, "nocheck_export_cycle_produces_error_type")
-{
-    ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauCyclicRequireTypeInference, true},
-        {FFlag::DebugLuauForceOldSolver, false},
-        {FFlag::LuauExportValueSyntax, true},
-        {FFlag::LuauExportValueTypecheck, true},
-    };
-
-    fileResolver.source["game/Gui/Modules/A"] = R"(
-        --!nocheck
-        local Modules = game:GetService('Gui').Modules
-        local B = require(Modules.B)
-        export local hello = B.hello
-    )";
-    fileResolver.source["game/Gui/Modules/B"] = R"(
-        --!nocheck
-        local Modules = game:GetService('Gui').Modules
-        local A = require(Modules.A)
-        export local hello = A.hello
-    )";
-    fileResolver.source["game/Gui/Modules/C"] = R"(
-        --!strict
-        local Modules = game:GetService('Gui').Modules
-        local A = require(Modules.A)
-        local B = require(Modules.B)
-        return {a=A, b=B}
-    )";
-
-    CheckResult result = getFrontend().check("game/Gui/Modules/C");
-    LUAU_REQUIRE_NO_ERRORS(result);
-
-    ModulePtr cModule = getFrontend().moduleResolver.getModule("game/Gui/Modules/C");
-    std::optional<TypeId> cExports = first(cModule->returnType);
-    REQUIRE(bool(cExports));
-
-    // This is happening due to constraint generalization running between the modules' constraints are fully solved, leading to the circular modules' return types being asymmetrically generalized. A fix for this will go in a following PR to run constraint generalization after all modules in a SCC have been solved.
-    std::string result_str = toString(*cExports);
-    CHECK((result_str == "{ a: { read hello: any }, b: { read hello: unknown } }" ||
-           result_str == "{ a: { read hello: unknown }, b: { read hello: any } }"));
 }
 
 TEST_SUITE_END();

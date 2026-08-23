@@ -2,7 +2,7 @@
 #include "Luau/AstQuery.h"
 #include "Luau/BuiltinDefinitions.h"
 #include "Luau/Common.h"
-#include "Luau/DenseHash.h"
+#include "Luau/DenseHash2.h"
 #include "Luau/Frontend.h"
 #include "Luau/Parser.h"
 #include "Luau/RequireTracer.h"
@@ -21,12 +21,13 @@ LUAU_FASTFLAG(DebugLuauFreezeArena)
 LUAU_FASTFLAG(DebugLuauMagicTypes)
 LUAU_FASTFLAG(LuauExportValueSyntax)
 LUAU_FASTFLAG(LuauExportValueTypecheck)
-LUAU_FASTFLAG(LuauDontBindOptionalGenericToNil)
 LUAU_FASTFLAG(LuauSubtypingMissingPropertiesAsNil)
 LUAU_FASTFLAG(LuauBidirectionalInferenceSimplifyTables)
 LUAU_FASTFLAG(LuauFrontendSourceNodeErase)
-LUAU_FASTFLAG(DebugLuauCyclicRequireTypeInference)
+LUAU_FASTFLAG(LuauCyclicRequireTypeInference)
+LUAU_FASTFLAG(LuauExportedTypesParticipateInScc)
 LUAU_FASTINT(LuauCyclicSccWarningThreshold)
+LUAU_FASTFLAG(LuauExportAnnotationBinding)
 
 namespace
 {
@@ -1761,7 +1762,7 @@ TEST_CASE_FIXTURE(FrontendFixture, "test_dependents_stored_on_node_as_graph_upda
 
     auto validateMatchesRequireLists = [&](const std::string& message)
     {
-        DenseHashMap<ModuleName, std::vector<ModuleName>> dependents{{}};
+        DenseHashMap2<ModuleName, std::vector<ModuleName>> dependents;
         for (const auto& module : getFrontend().sourceNodes)
         {
             for (const auto& dep : module.second->requireSet)
@@ -2017,7 +2018,6 @@ TEST_CASE_FIXTURE(FrontendFixture, "generic_P_widening_with_cross_module_recursi
     DOES_NOT_PASS_OLD_SOLVER_GUARD();
 
     ScopedFastFlag sffs[] = {
-        {FFlag::LuauDontBindOptionalGenericToNil, true},
         {FFlag::LuauSubtypingMissingPropertiesAsNil, true},
         {FFlag::LuauBidirectionalInferenceSimplifyTables, true},
     };
@@ -2101,7 +2101,7 @@ TEST_CASE_FIXTURE(FrontendFixture, "deleted_source_is_evicted_on_recheck")
 TEST_CASE_FIXTURE(FrontendFixture, "scc_detection_identifies_cycle")
 {
     ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauCyclicRequireTypeInference, true},
+        {FFlag::LuauCyclicRequireTypeInference, true},
         {FFlag::DebugLuauForceOldSolver, false},
         {FFlag::LuauExportValueSyntax, true},
         {FFlag::LuauExportValueTypecheck, true},
@@ -2133,7 +2133,7 @@ TEST_CASE_FIXTURE(FrontendFixture, "scc_detection_identifies_cycle")
 TEST_CASE_FIXTURE(FrontendFixture, "scc_non_export_cycle_reports_errors")
 {
     ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauCyclicRequireTypeInference, true},
+        {FFlag::LuauCyclicRequireTypeInference, true},
         {FFlag::DebugLuauForceOldSolver, false},
         {FFlag::LuauExportValueSyntax, true},
         {FFlag::LuauExportValueTypecheck, true},
@@ -2170,7 +2170,7 @@ TEST_CASE_FIXTURE(FrontendFixture, "scc_non_export_cycle_reports_errors")
 TEST_CASE_FIXTURE(FrontendFixture, "scc_mixed_export_non_export_not_grouped")
 {
     ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauCyclicRequireTypeInference, true},
+        {FFlag::LuauCyclicRequireTypeInference, true},
         {FFlag::DebugLuauForceOldSolver, false},
         {FFlag::LuauExportValueSyntax, true},
         {FFlag::LuauExportValueTypecheck, true},
@@ -2196,10 +2196,107 @@ TEST_CASE_FIXTURE(FrontendFixture, "scc_mixed_export_non_export_not_grouped")
     CHECK(snB->scc.expired());
 }
 
+TEST_CASE_FIXTURE(FrontendFixture, "scc_export_type_only_module_participates_in_cycle")
+{
+    ScopedFastFlag sffs[] = {
+        {FFlag::LuauCyclicRequireTypeInference, true},
+        {FFlag::DebugLuauForceOldSolver, false},
+        {FFlag::LuauExportValueSyntax, true},
+        {FFlag::LuauExportValueTypecheck, true},
+        {FFlag::LuauExportedTypesParticipateInScc, true},
+    };
+
+    fileResolver.source["game/A"] = R"(
+        local b = require(game.B)
+        export local a = 1
+    )";
+    fileResolver.source["game/B"] = R"(
+        local a = require(game.A)
+        export type Shape = { x: number, y: number }
+    )";
+
+    CheckResult result = getFrontend().check("game/A");
+
+    // A type-only export module with no return is a new-school module that
+    // participates in the SCC.
+    LUAU_CHECK_NO_ERRORS(result);
+
+    auto snA = getFrontend().sourceNodes["game/A"];
+    auto snB = getFrontend().sourceNodes["game/B"];
+    REQUIRE(snA);
+    REQUIRE(snB);
+    CHECK(!snA->scc.expired());
+    CHECK(!snB->scc.expired());
+    CHECK(snA->scc.lock() == snB->scc.lock());
+}
+
+TEST_CASE_FIXTURE(FrontendFixture, "scc_export_type_only_with_return_empty_table_not_grouped")
+{
+    ScopedFastFlag sffs[] = {
+        {FFlag::LuauCyclicRequireTypeInference, true},
+        {FFlag::DebugLuauForceOldSolver, false},
+        {FFlag::LuauExportValueSyntax, true},
+        {FFlag::LuauExportValueTypecheck, true},
+        {FFlag::LuauExportedTypesParticipateInScc, true},
+    };
+
+    fileResolver.source["game/A"] = R"(
+        local b = require(game.B)
+        export local a = 1
+    )";
+    fileResolver.source["game/B"] = R"(
+        local a = require(game.A)
+        export type Shape = { x: number, y: number }
+        return {}
+    )";
+
+    getFrontend().check("game/A");
+
+    // A type-only export module with an explicit return (even empty table)
+    // is an old-school module and does not participate in the SCC.
+    auto snA = getFrontend().sourceNodes["game/A"];
+    auto snB = getFrontend().sourceNodes["game/B"];
+    REQUIRE(snA);
+    REQUIRE(snB);
+    CHECK(snA->scc.expired());
+    CHECK(snB->scc.expired());
+}
+
+TEST_CASE_FIXTURE(FrontendFixture, "scc_export_type_only_with_return_non_empty_table_not_grouped")
+{
+    ScopedFastFlag sffs[] = {
+        {FFlag::LuauCyclicRequireTypeInference, true},
+        {FFlag::DebugLuauForceOldSolver, false},
+        {FFlag::LuauExportValueSyntax, true},
+        {FFlag::LuauExportValueTypecheck, true},
+        {FFlag::LuauExportedTypesParticipateInScc, true},
+    };
+
+    fileResolver.source["game/A"] = R"(
+        local b = require(game.B)
+        export local a = 1
+    )";
+    fileResolver.source["game/B"] = R"(
+        local a = require(game.A)
+        export type Shape = { x: number, y: number }
+        return { defaultShape = { x = 0, y = 0 } }
+    )";
+
+    getFrontend().check("game/A");
+
+    // A type-only export module returning values does not participate in the SCC.
+    auto snA = getFrontend().sourceNodes["game/A"];
+    auto snB = getFrontend().sourceNodes["game/B"];
+    REQUIRE(snA);
+    REQUIRE(snB);
+    CHECK(snA->scc.expired());
+    CHECK(snB->scc.expired());
+}
+
 TEST_CASE_FIXTURE(FrontendFixture, "scc_shared_arena")
 {
     ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauCyclicRequireTypeInference, true},
+        {FFlag::LuauCyclicRequireTypeInference, true},
         {FFlag::DebugLuauForceOldSolver, false},
         {FFlag::LuauExportValueSyntax, true},
         {FFlag::LuauExportValueTypecheck, true},
@@ -2227,7 +2324,7 @@ TEST_CASE_FIXTURE(FrontendFixture, "scc_shared_arena")
 TEST_CASE_FIXTURE(FrontendFixture, "scc_no_cycle_errors")
 {
     ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauCyclicRequireTypeInference, true},
+        {FFlag::LuauCyclicRequireTypeInference, true},
         {FFlag::DebugLuauForceOldSolver, false},
         {FFlag::LuauExportValueSyntax, true},
         {FFlag::LuauExportValueTypecheck, true},
@@ -2250,7 +2347,7 @@ TEST_CASE_FIXTURE(FrontendFixture, "scc_no_cycle_errors")
 TEST_CASE_FIXTURE(FrontendFixture, "scc_export_cycle_with_nocheck_no_errors")
 {
     ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauCyclicRequireTypeInference, true},
+        {FFlag::LuauCyclicRequireTypeInference, true},
         {FFlag::DebugLuauForceOldSolver, false},
         {FFlag::LuauExportValueSyntax, true},
         {FFlag::LuauExportValueTypecheck, true},
@@ -2283,7 +2380,7 @@ TEST_CASE_FIXTURE(FrontendFixture, "scc_export_cycle_with_nocheck_no_errors")
 TEST_CASE_FIXTURE(FrontendFixture, "scc_export_cycle_strict_sees_nocheck_exports")
 {
     ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauCyclicRequireTypeInference, true},
+        {FFlag::LuauCyclicRequireTypeInference, true},
         {FFlag::DebugLuauForceOldSolver, false},
         {FFlag::LuauExportValueSyntax, true},
         {FFlag::LuauExportValueTypecheck, true},
@@ -2317,7 +2414,7 @@ TEST_CASE_FIXTURE(FrontendFixture, "scc_export_cycle_strict_sees_nocheck_exports
 TEST_CASE_FIXTURE(FrontendFixture, "scc_return_types_resolved")
 {
     ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauCyclicRequireTypeInference, true},
+        {FFlag::LuauCyclicRequireTypeInference, true},
         {FFlag::DebugLuauForceOldSolver, false},
         {FFlag::LuauExportValueSyntax, true},
         {FFlag::LuauExportValueTypecheck, true},
@@ -2353,7 +2450,7 @@ TEST_CASE_FIXTURE(FrontendFixture, "scc_return_types_resolved")
 TEST_CASE_FIXTURE(FrontendFixture, "scc_property_access_across_cycle")
 {
     ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauCyclicRequireTypeInference, true},
+        {FFlag::LuauCyclicRequireTypeInference, true},
         {FFlag::DebugLuauForceOldSolver, false},
         {FFlag::LuauExportValueSyntax, true},
         {FFlag::LuauExportValueTypecheck, true},
@@ -2381,7 +2478,7 @@ TEST_CASE_FIXTURE(FrontendFixture, "scc_property_access_across_cycle")
 TEST_CASE_FIXTURE(FrontendFixture, "scc_three_module_cycle")
 {
     ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauCyclicRequireTypeInference, true},
+        {FFlag::LuauCyclicRequireTypeInference, true},
         {FFlag::DebugLuauForceOldSolver, false},
         {FFlag::LuauExportValueSyntax, true},
         {FFlag::LuauExportValueTypecheck, true},
@@ -2418,7 +2515,7 @@ TEST_CASE_FIXTURE(FrontendFixture, "scc_three_module_cycle")
 TEST_CASE_FIXTURE(FrontendFixture, "scc_non_cyclic_dependent_has_own_arena")
 {
     ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauCyclicRequireTypeInference, true},
+        {FFlag::LuauCyclicRequireTypeInference, true},
         {FFlag::DebugLuauForceOldSolver, false},
         {FFlag::LuauExportValueSyntax, true},
         {FFlag::LuauExportValueTypecheck, true},
@@ -2453,7 +2550,7 @@ TEST_CASE_FIXTURE(FrontendFixture, "scc_non_cyclic_dependent_has_own_arena")
 TEST_CASE_FIXTURE(FrontendFixture, "scc_markdirty_propagates_to_peers")
 {
     ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauCyclicRequireTypeInference, true},
+        {FFlag::LuauCyclicRequireTypeInference, true},
         {FFlag::DebugLuauForceOldSolver, false},
         {FFlag::LuauExportValueSyntax, true},
         {FFlag::LuauExportValueTypecheck, true},
@@ -2485,7 +2582,7 @@ TEST_CASE_FIXTURE(FrontendFixture, "scc_markdirty_propagates_to_peers")
 TEST_CASE_FIXTURE(FrontendFixture, "scc_large_cycle_warning")
 {
     ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauCyclicRequireTypeInference, true},
+        {FFlag::LuauCyclicRequireTypeInference, true},
         {FFlag::DebugLuauForceOldSolver, false},
         {FFlag::LuauExportValueSyntax, true},
         {FFlag::LuauExportValueTypecheck, true},
@@ -2542,7 +2639,7 @@ TEST_CASE_FIXTURE(FrontendFixture, "scc_old_solver_independent")
 TEST_CASE_FIXTURE(FrontendFixture, "scc_queued_modules_shared_arena")
 {
     ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauCyclicRequireTypeInference, true},
+        {FFlag::LuauCyclicRequireTypeInference, true},
         {FFlag::DebugLuauForceOldSolver, false},
         {FFlag::LuauExportValueSyntax, true},
         {FFlag::LuauExportValueTypecheck, true},
@@ -2571,7 +2668,7 @@ TEST_CASE_FIXTURE(FrontendFixture, "scc_queued_modules_shared_arena")
 TEST_CASE_FIXTURE(FrontendFixture, "scc_queued_modules_no_cycle_errors")
 {
     ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauCyclicRequireTypeInference, true},
+        {FFlag::LuauCyclicRequireTypeInference, true},
         {FFlag::DebugLuauForceOldSolver, false},
         {FFlag::LuauExportValueSyntax, true},
         {FFlag::LuauExportValueTypecheck, true},
@@ -2597,7 +2694,7 @@ TEST_CASE_FIXTURE(FrontendFixture, "scc_queued_modules_no_cycle_errors")
 TEST_CASE_FIXTURE(FrontendFixture, "scc_queued_modules_return_types_resolved")
 {
     ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauCyclicRequireTypeInference, true},
+        {FFlag::LuauCyclicRequireTypeInference, true},
         {FFlag::DebugLuauForceOldSolver, false},
         {FFlag::LuauExportValueSyntax, true},
         {FFlag::LuauExportValueTypecheck, true},
@@ -2634,7 +2731,7 @@ TEST_CASE_FIXTURE(FrontendFixture, "scc_queued_modules_return_types_resolved")
 TEST_CASE_FIXTURE(FrontendFixture, "scc_queued_modules_three_module_cycle")
 {
     ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauCyclicRequireTypeInference, true},
+        {FFlag::LuauCyclicRequireTypeInference, true},
         {FFlag::DebugLuauForceOldSolver, false},
         {FFlag::LuauExportValueSyntax, true},
         {FFlag::LuauExportValueTypecheck, true},
@@ -2674,7 +2771,7 @@ TEST_CASE_FIXTURE(FrontendFixture, "scc_queued_modules_three_module_cycle")
 TEST_CASE_FIXTURE(FrontendFixture, "scc_queued_modules_property_access_across_cycle")
 {
     ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauCyclicRequireTypeInference, true},
+        {FFlag::LuauCyclicRequireTypeInference, true},
         {FFlag::DebugLuauForceOldSolver, false},
         {FFlag::LuauExportValueSyntax, true},
         {FFlag::LuauExportValueTypecheck, true},
@@ -2703,7 +2800,7 @@ TEST_CASE_FIXTURE(FrontendFixture, "scc_queued_modules_property_access_across_cy
 TEST_CASE_FIXTURE(FrontendFixture, "scc_queued_multiple_independent_cycles")
 {
     ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauCyclicRequireTypeInference, true},
+        {FFlag::LuauCyclicRequireTypeInference, true},
         {FFlag::DebugLuauForceOldSolver, false},
         {FFlag::LuauExportValueSyntax, true},
         {FFlag::LuauExportValueTypecheck, true},
@@ -2750,7 +2847,7 @@ TEST_CASE_FIXTURE(FrontendFixture, "scc_queued_multiple_independent_cycles")
 TEST_CASE_FIXTURE(FrontendFixture, "scc_queued_cycle_with_non_cyclic_dependent")
 {
     ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauCyclicRequireTypeInference, true},
+        {FFlag::LuauCyclicRequireTypeInference, true},
         {FFlag::DebugLuauForceOldSolver, false},
         {FFlag::LuauExportValueSyntax, true},
         {FFlag::LuauExportValueTypecheck, true},
@@ -2791,7 +2888,7 @@ TEST_CASE_FIXTURE(FrontendFixture, "scc_queued_cycle_with_non_cyclic_dependent")
 TEST_CASE_FIXTURE(FrontendFixture, "scc_queued_recheck_after_dirty")
 {
     ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauCyclicRequireTypeInference, true},
+        {FFlag::LuauCyclicRequireTypeInference, true},
         {FFlag::DebugLuauForceOldSolver, false},
         {FFlag::LuauExportValueSyntax, true},
         {FFlag::LuauExportValueTypecheck, true},
@@ -2834,7 +2931,7 @@ TEST_CASE_FIXTURE(FrontendFixture, "scc_queued_recheck_after_dirty")
 TEST_CASE_FIXTURE(FrontendFixture, "scc_self_loop")
 {
     ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauCyclicRequireTypeInference, true},
+        {FFlag::LuauCyclicRequireTypeInference, true},
         {FFlag::DebugLuauForceOldSolver, false},
         {FFlag::LuauExportValueSyntax, true},
         {FFlag::LuauExportValueTypecheck, true},
@@ -2865,7 +2962,7 @@ TEST_CASE_FIXTURE(FrontendFixture, "scc_self_loop")
 TEST_CASE_FIXTURE(FrontendFixture, "scc_error_attributed_to_correct_module")
 {
     ScopedFastFlag sffs[] = {
-        {FFlag::DebugLuauCyclicRequireTypeInference, true},
+        {FFlag::LuauCyclicRequireTypeInference, true},
         {FFlag::DebugLuauForceOldSolver, false},
         {FFlag::LuauExportValueSyntax, true},
         {FFlag::LuauExportValueTypecheck, true},
@@ -2899,6 +2996,218 @@ TEST_CASE_FIXTURE(FrontendFixture, "scc_error_attributed_to_correct_module")
     // Module B should not have module A's type errors
     for (const TypeError& e : modB->errors)
         CHECK(e.moduleName != "game/A");
+}
+
+// Mimics cycle_detection_between_check_and_nocheck test, but with export statements instead of return statements.
+TEST_CASE_FIXTURE(BuiltinsFixture, "export_cycle_between_check_and_nocheck")
+{
+    ScopedFastFlag sffs[] = {
+        {FFlag::LuauCyclicRequireTypeInference, true},
+        {FFlag::DebugLuauForceOldSolver, false},
+        {FFlag::LuauExportValueSyntax, true},
+        {FFlag::LuauExportValueTypecheck, true},
+    };
+
+    fileResolver.source["game/Gui/Modules/A"] = R"(
+        --!strict
+        local Modules = game:GetService('Gui').Modules
+        local B = require(Modules.B)
+        export local hello = B.hello
+    )";
+    fileResolver.source["game/Gui/Modules/B"] = R"(
+        --!nocheck
+        local Modules = game:GetService('Gui').Modules
+        local A = require(Modules.A)
+        export local hello = A.hello
+    )";
+
+    CheckResult result = getFrontend().check("game/Gui/Modules/A");
+
+    LUAU_REQUIRE_NO_ERRORS(result);
+}
+
+// Mimics nocheck_cycle_used_by_checked test, but with export statements instead of return statements.
+TEST_CASE_FIXTURE(BuiltinsFixture, "nocheck_export_cycle_produces_error_type")
+{
+    ScopedFastFlag sffs[] = {
+        {FFlag::LuauCyclicRequireTypeInference, true},
+        {FFlag::DebugLuauForceOldSolver, false},
+        {FFlag::LuauExportValueSyntax, true},
+        {FFlag::LuauExportValueTypecheck, true},
+    };
+
+    fileResolver.source["game/Gui/Modules/A"] = R"(
+        --!nocheck
+        local Modules = game:GetService('Gui').Modules
+        local B = require(Modules.B)
+        export local hello = B.hello
+    )";
+    fileResolver.source["game/Gui/Modules/B"] = R"(
+        --!nocheck
+        local Modules = game:GetService('Gui').Modules
+        local A = require(Modules.A)
+        export local hello = A.hello
+    )";
+    fileResolver.source["game/Gui/Modules/C"] = R"(
+        --!strict
+        local Modules = game:GetService('Gui').Modules
+        local A = require(Modules.A)
+        local B = require(Modules.B)
+        return {a=A, b=B}
+    )";
+
+    CheckResult result = getFrontend().check("game/Gui/Modules/C");
+    LUAU_REQUIRE_NO_ERRORS(result);
+
+    ModulePtr cModule = getFrontend().moduleResolver.getModule("game/Gui/Modules/C");
+    std::optional<TypeId> cExports = first(cModule->returnType);
+    REQUIRE(bool(cExports));
+
+    // SCC path runs constraint solving before module-level generalization, so the free types in A and B are constrained to be the same type. The
+    // unconstrained free type generalizes to unknown.
+    std::string result_str = toString(*cExports);
+    CHECK(result_str == "{ a: { read hello: unknown }, b: { read hello: unknown } }");
+}
+
+TEST_CASE_FIXTURE(FrontendFixture, "scc_cyclic_peer_sees_exported_value_types")
+{
+    ScopedFastFlag sffs[] = {
+        {FFlag::LuauCyclicRequireTypeInference, true},
+        {FFlag::DebugLuauForceOldSolver, false},
+        {FFlag::LuauExportValueSyntax, true},
+        {FFlag::LuauExportValueTypecheck, true},
+        {FFlag::LuauExportAnnotationBinding, true},
+    };
+
+    fileResolver.source["game/C"] = R"(
+        --!strict
+        local d = require(game.D)
+        export type shape = { a: string }
+        export local name: string = "c"
+        export local value: shape = { a = name }
+    )";
+    fileResolver.source["game/D"] = R"(
+        --!strict
+        local c = require(game.C)
+        export local cRef = c
+    )";
+
+    CheckResult result = getFrontend().check("game/D");
+
+    ModulePtr modC = getFrontend().moduleResolver.getModule("game/C");
+    ModulePtr modD = getFrontend().moduleResolver.getModule("game/D");
+    REQUIRE(modC);
+    REQUIRE(modD);
+
+    // Module C's own return type should have the exported values
+    std::optional<TypeId> cFirst = first(modC->returnType);
+    REQUIRE(cFirst);
+    CHECK(toString(*cFirst) == "{ read name: string, read value: shape }");
+
+    // Module D's return type should include cRef whose type is C's exports table
+    std::optional<TypeId> dFirst = first(modD->returnType);
+    REQUIRE(dFirst);
+    // cRef should be the same exports table type, not unknown
+    const TableType* dTable = get<TableType>(follow(*dFirst));
+    REQUIRE(dTable);
+    auto cRefIt = dTable->props.find("cRef");
+    REQUIRE(cRefIt != dTable->props.end());
+    REQUIRE(cRefIt->second.readTy);
+    TypeId cRefType = follow(*cRefIt->second.readTy);
+    // The type of cRef (which is `c` from the cyclic require) should be the exports table, not unknown
+    CHECK(get<TableType>(cRefType) != nullptr);
+}
+
+TEST_CASE_FIXTURE(FrontendFixture, "scc_cyclic_peer_exports_from_later_module_not_unknown")
+{
+    ScopedFastFlag sffs[] = {
+        {FFlag::LuauCyclicRequireTypeInference, true},
+        {FFlag::DebugLuauForceOldSolver, false},
+        {FFlag::LuauExportValueSyntax, true},
+        {FFlag::LuauExportValueTypecheck, true},
+        {FFlag::LuauExportAnnotationBinding, true},
+    };
+
+    fileResolver.source["game/A"] = R"(
+        --!strict
+        local B = require(game.B)
+        export local fromA: string | number = 1
+        export local fromB = B.fromB
+    )";
+    fileResolver.source["game/B"] = R"(
+        --!strict
+        local A = require(game.A)
+        export local fromB = 2
+        export local fromA = A.fromA
+    )";
+
+    CheckResult result = getFrontend().check("game/A");
+
+    ModulePtr modA = getFrontend().moduleResolver.getModule("game/A");
+    ModulePtr modB = getFrontend().moduleResolver.getModule("game/B");
+    REQUIRE(modA);
+    REQUIRE(modB);
+
+    // Module A re-exports B.fromB — it should be number, not unknown
+    std::optional<TypeId> aFirst = first(modA->returnType);
+    REQUIRE(aFirst);
+    const TableType* aTable = get<TableType>(follow(*aFirst));
+    REQUIRE(aTable);
+    auto fromBIt = aTable->props.find("fromB");
+    REQUIRE(fromBIt != aTable->props.end());
+    REQUIRE(fromBIt->second.readTy);
+    CHECK(toString(follow(*fromBIt->second.readTy)) == "number");
+
+    // Module B re-exports A.fromA — it should be string | number, not unknown
+    std::optional<TypeId> bFirst = first(modB->returnType);
+    REQUIRE(bFirst);
+    const TableType* bTable = get<TableType>(follow(*bFirst));
+    REQUIRE(bTable);
+    auto fromAIt = bTable->props.find("fromA");
+    REQUIRE(fromAIt != bTable->props.end());
+    REQUIRE(fromAIt->second.readTy);
+    CHECK(toString(follow(*fromAIt->second.readTy)) == "number | string");
+}
+
+TEST_CASE_FIXTURE(FrontendFixture, "scc_cyclic_peer_sees_exported_type_bindings")
+{
+    ScopedFastFlag sffs[] = {
+        {FFlag::LuauCyclicRequireTypeInference, true},
+        {FFlag::DebugLuauForceOldSolver, false},
+        {FFlag::LuauExportValueSyntax, true},
+        {FFlag::LuauExportValueTypecheck, true},
+    };
+
+    fileResolver.source["game/C"] = R"(
+        --!strict
+        local d = require(game.D)
+        export type shape = { a: string }
+        export local name: string = "c"
+    )";
+    fileResolver.source["game/D"] = R"(
+        --!strict
+        local c = require(game.C)
+        local x: c.shape = { a = "hello" }
+        export local val = x
+    )";
+
+    CheckResult result = getFrontend().check("game/D");
+
+    ModulePtr modD = getFrontend().moduleResolver.getModule("game/D");
+    REQUIRE(modD);
+
+    // D should be able to use the type alias c.shape from module C
+    std::optional<TypeId> dFirst = first(modD->returnType);
+    REQUIRE(dFirst);
+    const TableType* dTable = get<TableType>(follow(*dFirst));
+    REQUIRE(dTable);
+    auto valIt = dTable->props.find("val");
+    REQUIRE(valIt != dTable->props.end());
+    REQUIRE(valIt->second.readTy);
+    TypeId valType = follow(*valIt->second.readTy);
+    // val should have type shape = { a: string }, not unknown or error
+    const TableType* valTable = get<TableType>(valType);
+    CHECK(valTable != nullptr);
 }
 
 TEST_SUITE_END();

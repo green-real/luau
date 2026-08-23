@@ -16,7 +16,6 @@ using namespace Luau;
 
 LUAU_FASTFLAG(DebugLuauForceOldSolver)
 LUAU_FASTFLAG(LuauExportValueSyntax)
-LUAU_FASTFLAG(LuauFixPropReadsOnMetatableTypes)
 
 TEST_SUITE_BEGIN("TypeInferOOP");
 
@@ -396,7 +395,7 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "augmenting_an_unsealed_table_with_a_metatabl
     if (!FFlag::DebugLuauForceOldSolver)
         CHECK("{ @metatable { number: number }, { method: (unknown) -> string } }" == toString(requireType("B"), {true}));
     else
-        CHECK("{ @metatable {| number: number |}, {| method: <a>(a) -> string |} }" == toString(requireType("B"), {true}));
+        CHECK("{ @metatable {| number: number |}, {| method: <T>(T) -> string |} }" == toString(requireType("B"), {true}));
 }
 
 TEST_CASE_FIXTURE(BuiltinsFixture, "react_style_oo")
@@ -464,7 +463,7 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "cycle_between_object_constructor_and_alias")
     CHECK_MESSAGE(get<MetatableType>(follow(aliasType)), "Expected metatable type but got: " << toString(aliasType));
 }
 
-TEST_CASE_FIXTURE(BuiltinsFixture, "promise_type_error_too_complex" * doctest::timeout(2))
+TEST_CASE_FIXTURE(BuiltinsFixture, "promise_type_error_too_complex" * doctest::timeout(LUAU_TIMEOUT))
 {
     getFrontend().options.retainFullTypeGraphs = false;
 
@@ -786,7 +785,6 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "metatable_field_precedence_for_subtyping")
 
 TEST_CASE_FIXTURE(BuiltinsFixture, "assign_to_prop_of_intersection_of_metatables")
 {
-    ScopedFastFlag sff{FFlag::LuauFixPropReadsOnMetatableTypes, true};
     if (FFlag::DebugLuauForceOldSolver)
         return;
 
@@ -917,7 +915,7 @@ TEST_CASE_FIXTURE(Fixture, "point_class")
                 return 100
             end
 
-            function new()
+            function create()
                 return Point { x = 0, y = 0 }
             end
         end
@@ -925,7 +923,7 @@ TEST_CASE_FIXTURE(Fixture, "point_class")
         local p = Point { x = 2, y = 3 }
         local len = p:length()
 
-        local p2 = Point.new()
+        local p2 = Point.create()
     )");
 
     LUAU_CHECK_NO_ERRORS(result);

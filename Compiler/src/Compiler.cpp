@@ -33,10 +33,12 @@ LUAU_FASTFLAGVARIABLE(LuauCompileIifeInline)
 LUAU_FASTFLAG(LuauExportValueSyntax)
 LUAU_FASTFLAG(LuauIntegerType2)
 LUAU_FASTFLAGVARIABLE(LuauCompileStringInterpTargetTop)
+LUAU_FASTFLAGVARIABLE(LuauCompileConcatTargetTop)
 LUAU_FASTFLAG(DebugLuauNoInline)
-LUAU_FASTFLAGVARIABLE(LuauEmitCallFeedback)
+LUAU_FASTFLAG(LuauEmitCallFeedback)
 LUAU_FASTFLAGVARIABLE(LuauOptimizeExportTable)
-
+LUAU_FASTFLAG(LuauCompileFastpcall)
+LUAU_FASTFLAGVARIABLE(LuauExportedTypesParticipateInScc)
 
 namespace Luau
 {
@@ -123,18 +125,6 @@ struct Compiler
     Compiler(BytecodeBuilder& bytecode, const CompileOptions& options, AstNameTable& names)
         : bytecode(bytecode)
         , options(options)
-        , functions(nullptr)
-        , locals(nullptr)
-        , globals(AstName())
-        , variables(nullptr)
-        , constants(nullptr)
-        , locstants(nullptr)
-        , tableShapes(nullptr)
-        , builtins(nullptr)
-        , userdataTypes(AstName())
-        , functionTypes(nullptr)
-        , localTypes(nullptr)
-        , exprTypes(nullptr)
         , builtinTypes(options.vectorType)
         , names(names)
         , exports(AstLocal(names.getOrAdd("__EXP"), Location(), nullptr, 0, 0, nullptr, true))
@@ -374,43 +364,57 @@ struct Compiler
 
     void compileExportTable()
     {
-        LUAU_ASSERT(!exports.isEmpty());
         LUAU_ASSERT(currentFunction);
 
-        // this arises when we have a module that is only exporting classes
-        ensureExportTable(currentFunction);
-
         AstExprFunction* locNode = currentFunction;
-        int8_t tableReg = getLocalReg(&exports.exportTableLocal);
-        LUAU_ASSERT(tableReg >= 0);
+        int8_t tableReg;
 
-        if (FFlag::DebugLuauUserDefinedClasses)
+        if (!exports.isEmpty())
         {
-            for (auto& [classLocal, classReg] : exports.exportedClasses)
-            {
-                BytecodeBuilder::StringRef classNameRef = sref(classLocal->name);
-                int32_t classNameCid = bytecode.addConstantString(classNameRef);
-                if (classNameCid < 0)
-                    CompileError::raise(locNode->location, "Exceeded constant limit; simplify the code to compile");
+            // this arises when we have a module that is only exporting classes
+            ensureExportTable(currentFunction);
 
-                bytecode.emitABC(LOP_SETTABLEKS, classReg, tableReg, uint8_t(BytecodeBuilder::getStringHash(classNameRef)));
-                bytecode.emitAux(classNameCid);
+            tableReg = getLocalReg(&exports.exportTableLocal);
+            LUAU_ASSERT(tableReg >= 0);
+
+            if (FFlag::DebugLuauUserDefinedClasses)
+            {
+                for (auto& [classLocal, classReg] : exports.exportedClasses)
+                {
+                    BytecodeBuilder::StringRef classNameRef = sref(classLocal->name);
+                    int32_t classNameCid = bytecode.addConstantString(classNameRef);
+                    if (classNameCid < 0)
+                        CompileError::raise(locNode->location, "Exceeded constant limit; simplify the code to compile");
+
+                    bytecode.emitABC(LOP_SETTABLEKS, classReg, tableReg, uint8_t(BytecodeBuilder::getStringHash(classNameRef)));
+                    bytecode.emitAux(classNameCid);
+                }
+            }
+
+            if (FFlag::LuauOptimizeExportTable)
+            {
+                for (auto& funcLocal : exports.exportedFunctions)
+                {
+                    int32_t cid = bytecode.addConstantString(sref(funcLocal->name));
+                    if (cid < 0)
+                        CompileError::raise(funcLocal->location, "Exceeded constant limit; simplify the code to compile");
+
+                    uint8_t funcReg = getLocalReg(funcLocal);
+
+                    bytecode.emitABC(LOP_SETTABLEKS, funcReg, tableReg, uint8_t(BytecodeBuilder::getStringHash(sref(funcLocal->name))));
+                    bytecode.emitAux(cid);
+                }
             }
         }
-
-        if (FFlag::LuauOptimizeExportTable)
+        else
         {
-            for (auto& funcLocal : exports.exportedFunctions)
-            {
-                int32_t cid = bytecode.addConstantString(sref(funcLocal->name));
-                if (cid < 0)
-                    CompileError::raise(funcLocal->location, "Exceeded constant limit; simplify the code to compile");
+            // Type-only exports with no return: emit a fresh empty table
+            LUAU_ASSERT(FFlag::LuauExportedTypesParticipateInScc);
+            LUAU_ASSERT(exports.hasTypeExports);
 
-                uint8_t funcReg = getLocalReg(funcLocal);
-
-                bytecode.emitABC(LOP_SETTABLEKS, funcReg, tableReg, uint8_t(BytecodeBuilder::getStringHash(sref(funcLocal->name))));
-                bytecode.emitAux(cid);
-            }
+            tableReg = allocReg(locNode, 1u);
+            bytecode.emitABC(LOP_NEWTABLE, tableReg, encodeHashSize(0), 0);
+            bytecode.emitAux(0);
         }
 
         uint8_t freezeReg = allocReg(locNode, 2u);
@@ -510,6 +514,10 @@ struct Compiler
             {
                 compileExportTable();
             }
+            else if (FFlag::LuauExportedTypesParticipateInScc && exports.hasTypeExports && !terminatesEarly && atTopLevel())
+            {
+                compileExportTable();
+            }
             else
             {
                 if (!terminatesEarly)
@@ -581,6 +589,9 @@ struct Compiler
             protoflags |= LPF_NATIVE_FUNCTION;
 
         if (FFlag::LuauExportValueSyntax && !exports.isEmpty() && func->functionDepth == 0)
+            protoflags |= LPF_USES_EXPORT;
+
+        if (FFlag::LuauExportedTypesParticipateInScc && exports.hasTypeExports && !terminatesEarly && func->functionDepth == 0)
             protoflags |= LPF_USES_EXPORT;
 
         bool isInlinable = !hasMultiRet && !getfenvUsed && !setfenvUsed;
@@ -1366,6 +1377,19 @@ struct Compiler
             }
         }
 
+        // Optimization: pcall/xpcall functions have a special fastcall instruction
+        int fastPcallId = -1;
+        if (FFlag::LuauCompileFastpcall && options.optimizationLevel >= 1 && !expr->self)
+        {
+            if (AstExprGlobal* g = expr->func->as<AstExprGlobal>(); g && canImport(g))
+            {
+                if (g->name == "pcall" && expr->args.size >= 1)
+                    fastPcallId = 0;
+                else if (g->name == "xpcall" && expr->args.size >= 2)
+                    fastPcallId = 1;
+            }
+        }
+
         if (expr->self)
         {
             AstExprIndexName* fi = expr->func->as<AstExprIndexName>();
@@ -1386,7 +1410,7 @@ struct Compiler
                 compileExprTempTop(fi->expr, selfreg);
             }
         }
-        else if (bfid < 0)
+        else if (bfid < 0 && (!FFlag::LuauCompileFastpcall || fastPcallId < 0))
         {
             compileExprTempTop(expr->func, regs);
         }
@@ -1418,10 +1442,19 @@ struct Compiler
 
             hintTemporaryExprRegType(fi->expr, selfreg, LBC_TYPE_TABLE, /* instLength */ 2);
         }
-        else if (bfid >= 0)
+        else if (bfid >= 0 || (FFlag::LuauCompileFastpcall && fastPcallId >= 0))
         {
             size_t fastcallLabel = bytecode.emitLabel();
-            bytecode.emitABC(LOP_FASTCALL, uint8_t(bfid), 0, 0);
+
+            if (FFlag::LuauCompileFastpcall && fastPcallId >= 0)
+            {
+                uint8_t explicitArgs = uint8_t(expr->args.size - (multCall ? 1 : 0));
+                bytecode.emitABC(LOP_FASTPCALL, uint8_t(fastPcallId), explicitArgs, 0);
+            }
+            else
+            {
+                bytecode.emitABC(LOP_FASTCALL, uint8_t(bfid), 0, 0);
+            }
 
             // note, these instructions are normally not executed and are used as a fallback for FASTCALL
             // we can't use TempTop variant here because we need to make sure the arguments we already computed aren't overwritten
@@ -1438,7 +1471,7 @@ struct Compiler
         // Without deoptimization we cannot break VARARG sequences.
         // So VARARG producer or consumer cannot be inlined, because it creates a diamond(with slow path).
         bool canInline = currentFunction->functionDepth != 0 && !multCall && !multRet;
-        if (FFlag::LuauEmitCallFeedback && bfid < 0 && canInline)
+        if (FFlag::LuauEmitCallFeedback && (bfid < 0 && (!FFlag::LuauCompileFastpcall || fastPcallId < 0)) && canInline)
         {
             uint32_t fbSlot = bytecode.addFbSlot(LuauFeedbackType::LFT_CALLTARGET);
             bytecode.emitABC(LOP_CALLFB, regs, multCall ? 0 : uint8_t(expr->self + expr->args.size + 1), multRet ? 0 : uint8_t(targetCount + 1));
@@ -1597,6 +1630,9 @@ struct Compiler
 
         RegScope _(this);
 
+        // The bottom bit of the C slot indicates whether the class is open.
+        uint8_t instrCVal = decl->open ? 1u : 0u;
+
         if (decl->super)
         {
             // If the superclass is already in a local register, we can reference it directly
@@ -1604,15 +1640,15 @@ struct Compiler
             uint8_t superDest = allocReg(decl, decl->super && superReg < 0 ? 1u : 0u);
 
             if (superReg >= 0)
-                bytecode.emitABC(LOP_NEWCLASS, dest, uint8_t(superReg), 0);
+                bytecode.emitABC(LOP_NEWCLASS, dest, uint8_t(superReg), instrCVal);
             else
             {
                 compileExpr(decl->super, superDest);
-                bytecode.emitABC(LOP_NEWCLASS, dest, superDest, 0);
+                bytecode.emitABC(LOP_NEWCLASS, dest, superDest, instrCVal);
             }
         }
         else // The range of valid registers is 0-254, so we use 0xFF (255) to indicate the absence of a superclass.
-            bytecode.emitABC(LOP_NEWCLASS, dest, kInvalidReg, 0);
+            bytecode.emitABC(LOP_NEWCLASS, dest, kInvalidReg, instrCVal);
 
         // We want to load the class constant up front, but in order to load
         // the class constant we need to build it first. To avoid a second
@@ -1632,9 +1668,10 @@ struct Compiler
         // N registers.
         auto temp = allocReg(decl, 1u);
 
+        bool hasExplicitConstructor = false;
+
         for (const auto& member : decl->members)
         {
-
             Luau::visit(
                 overloaded{
                     [&](const AstClassProperty& prop)
@@ -1661,10 +1698,25 @@ struct Compiler
                         shape.methodNames.emplace_back(methodNameCid);
                         bytecode.emitABC(LOP_NEWCLASSMEMBER, dest, 0, temp);
                         bytecode.emitAux(methodNameCid);
+
+                        if (method.functionName == "__init")
+                            hasExplicitConstructor = true;
                     }
                 },
                 member
             );
+        }
+
+        // All classes have `new` and `__init` methods.
+        int newCid = bytecode.addConstantString(sref(names.getOrAdd("new")));
+        checkConstant(newCid, decl->location);
+        shape.methodNames.emplace_back(newCid);
+
+        if (!hasExplicitConstructor)
+        {
+            int initCid = bytecode.addConstantString(sref(names.getOrAdd("__init")));
+            checkConstant(newCid, decl->location);
+            shape.methodNames.emplace_back(initCid);
         }
 
         // Finally, we create the class constant and patch the AUX slot
@@ -2275,7 +2327,10 @@ struct Compiler
             uint8_t regs = allocReg(expr, unsigned(args.size()));
 
             for (size_t i = 0; i < args.size(); ++i)
-                compileExprTemp(args[i], uint8_t(regs + i));
+                if (FFlag::LuauCompileConcatTargetTop)
+                    compileExprTempTop(args[i], uint8_t(regs + i));
+                else
+                    compileExprTemp(args[i], uint8_t(regs + i));
 
             bytecode.emitABC(LOP_CONCAT, target, regs, uint8_t(regs + args.size() - 1));
         }
@@ -3583,7 +3638,7 @@ struct Compiler
 
         setDebugLine(stat->condition);
 
-        // Note: this is using JUMPBACK, not JUMP, since JUMPBACK is interruptable and we want all loops to have at least one interruptable
+        // Note: this is using JUMPBACK, not JUMP, since JUMPBACK is interruptible and we want all loops to have at least one interruptible
         // instruction
         bytecode.emitAD(LOP_JUMPBACK, 0, 0);
 
@@ -3673,7 +3728,7 @@ struct Compiler
 
             size_t backLabel = bytecode.emitLabel();
 
-            // Note: this is using JUMPBACK, not JUMP, since JUMPBACK is interruptable and we want all loops to have at least one interruptable
+            // Note: this is using JUMPBACK, not JUMP, since JUMPBACK is interruptible and we want all loops to have at least one interruptible
             // instruction
             bytecode.emitAD(LOP_JUMPBACK, 0, 0);
 
@@ -3771,8 +3826,7 @@ struct Compiler
             if (!v || !v->constant)
                 return false;
 
-            if (FFlag::LuauExportValueSyntax && local->isExported &&
-                (!FFlag::LuauOptimizeExportTable || exports.exportedTableCid == -1))
+            if (FFlag::LuauExportValueSyntax && local->isExported && (!FFlag::LuauOptimizeExportTable || exports.exportedTableCid == -1))
             {
                 // exported locals must be written to the export table
                 return false;
@@ -4384,7 +4438,10 @@ struct Compiler
             compileLValueUse(var, regs, /* set= */ false, stat->var);
 
             for (size_t i = 0; i < args.size(); ++i)
-                compileExprTemp(args[i], uint8_t(regs + 1 + i));
+                if (FFlag::LuauCompileConcatTargetTop)
+                    compileExprTempTop(args[i], uint8_t(regs + 1 + i));
+                else
+                    compileExprTemp(args[i], uint8_t(regs + 1 + i));
 
             bytecode.emitABC(LOP_CONCAT, target, regs, uint8_t(regs + args.size()));
         }
@@ -4400,7 +4457,7 @@ struct Compiler
 
     void compileStatFunction(AstStatFunction* stat)
     {
-        // Optimization: compile value expresion directly into target local register
+        // Optimization: compile value expression directly into target local register
         if (int reg = getExprLocalReg(stat->name); reg >= 0)
         {
             compileExpr(stat->func, uint8_t(reg));
@@ -4580,9 +4637,10 @@ struct Compiler
                 l.debugpc = bytecode.getDebugPC();
             }
         }
-        else if (node->is<AstStatTypeAlias>())
+        else if (AstStatTypeAlias* alias = node->as<AstStatTypeAlias>())
         {
-            // do nothing
+            if (FFlag::LuauExportedTypesParticipateInScc && alias->exported && atTopLevel())
+                exports.hasTypeExports = true;
         }
         else if (node->is<AstStatTypeFunction>())
         {
@@ -4898,7 +4956,6 @@ struct Compiler
         UndefinedLocalVisitor(Compiler* self)
             : self(self)
             , undef(nullptr)
-            , locals(nullptr)
         {
         }
 
@@ -4934,7 +4991,7 @@ struct Compiler
 
         Compiler* self;
         AstLocal* undef;
-        DenseHashSet<AstLocal*> locals;
+        DenseHashSet2<AstLocal*> locals;
     };
 
     struct ConstUpvalueVisitor : AstVisitor
@@ -5087,23 +5144,24 @@ struct Compiler
 
     CompileOptions options;
 
-    DenseHashMap<AstExprFunction*, Function> functions;
-    DenseHashMap<AstLocal*, Local> locals;
-    DenseHashMap<AstName, Global> globals;
-    DenseHashMap<AstLocal*, Variable> variables;
-    DenseHashMap<AstExpr*, Constant> constants;
-    DenseHashMap<AstLocal*, Constant> locstants;
-    DenseHashMap<AstLocal*, TableConstantKind> tableConstants{nullptr};
-    DenseHashMap<AstExprTable*, TableShape> tableShapes;
-    DenseHashMap<AstExprCall*, int> builtins;
-    DenseHashMap<AstName, uint8_t> userdataTypes;
-    DenseHashMap<AstExprFunction*, std::string> functionTypes;
-    DenseHashMap<AstLocal*, LuauBytecodeType> localTypes;
-    DenseHashMap<AstExpr*, LuauBytecodeType> exprTypes;
-    DenseHashMap<AstName, AstLocal*> classLocals{AstName{}};
 
-    DenseHashMap<AstExprCall*, int> inlineBuiltins{nullptr};
-    DenseHashMap<AstExprCall*, int> inlineBuiltinsBackup{nullptr};
+    DenseHashMap2<AstExprFunction*, Function> functions;
+    DenseHashMap2<AstLocal*, Local> locals;
+    DenseHashMap2<AstName, Global> globals;
+    DenseHashMap2<AstLocal*, Variable> variables;
+    DenseHashMap2<AstExpr*, Constant> constants;
+    DenseHashMap2<AstLocal*, Constant> locstants;
+    DenseHashMap2<AstLocal*, TableConstantKind> tableConstants;
+    DenseHashMap2<AstExprTable*, TableShape> tableShapes;
+    DenseHashMap2<AstExprCall*, int> builtins;
+    DenseHashMap2<AstName, uint8_t> userdataTypes;
+    DenseHashMap2<AstExprFunction*, std::string> functionTypes;
+    DenseHashMap2<AstLocal*, LuauBytecodeType> localTypes;
+    DenseHashMap2<AstExpr*, LuauBytecodeType> exprTypes;
+    DenseHashMap2<AstName, AstLocal*> classLocals{};
+
+    DenseHashMap2<AstExprCall*, int> inlineBuiltins;
+    DenseHashMap2<AstExprCall*, int> inlineBuiltinsBackup;
 
     Compile::ExprConstantChangeLog exprChanges;
     Compile::LocalConstantChangeLog localChanges;
@@ -5111,7 +5169,7 @@ struct Compiler
     BuiltinAstTypes builtinTypes;
     AstNameTable& names;
 
-    const DenseHashMap<AstExprCall*, int>* builtinsFold = nullptr;
+    const DenseHashMap2<AstExprCall*, int>* builtinsFold = nullptr;
     bool builtinsFoldLibraryK = false;
 
     // compileFunction state, gets reset for every function
@@ -5137,11 +5195,12 @@ struct Compiler
     struct Exports
     {
         AstLocal exportTableLocal;
-        DenseHashMap<AstLocal*, uint8_t> exportedClasses{nullptr};
-        DenseHashSet<AstLocal*> exportedFunctions{nullptr};
+        DenseHashMap2<AstLocal*, uint8_t> exportedClasses;
+        DenseHashSet2<AstLocal*> exportedFunctions;
         std::vector<AstLocal*> exportedVariables;
         int32_t exportedTableCid = -1;
         bool hasExports = false;
+        bool hasTypeExports = false;
 
         explicit Exports(AstLocal tableLocal)
             : exportTableLocal(tableLocal)

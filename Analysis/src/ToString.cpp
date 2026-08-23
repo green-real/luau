@@ -3,7 +3,7 @@
 
 #include "Luau/Common.h"
 #include "Luau/Constraint.h"
-#include "Luau/DenseHash.h"
+#include "Luau/DenseHash2.h"
 #include "Luau/Location.h"
 #include "Luau/Scope.h"
 #include "Luau/Set.h"
@@ -18,8 +18,8 @@
 #include <algorithm>
 #include <string>
 
-LUAU_FASTFLAG(LuauSolverV2)
 LUAU_FASTFLAG(LuauIntegerType2)
+LUAU_FASTFLAGVARIABLE(LuauBetterInferredGenericNames)
 
 /*
  * Enables increasing levels of verbosity for Luau type names when stringifying.
@@ -57,8 +57,8 @@ struct FindCyclicTypes final : TypeVisitor
     FindCyclicTypes& operator=(const FindCyclicTypes&) = delete;
 
     bool exhaustive = false;
-    Luau::Set<TypeId> visited{{}};
-    Luau::Set<TypePackId> visitedPacks{{}};
+    Luau::Set<TypeId> visited;
+    Luau::Set<TypePackId> visitedPacks;
     std::set<TypeId> cycles;
     std::set<TypePackId> cycleTPs;
 
@@ -164,12 +164,12 @@ struct StringifierState
     ToStringOptions& opts;
     ToStringResult& result;
 
-    DenseHashMap<TypeId, std::string> cycleNames{{}};
-    DenseHashMap<TypePackId, std::string> cycleTpNames{{}};
-    Set<void*> seen{{}};
+    DenseHashMap2<TypeId, std::string> cycleNames;
+    DenseHashMap2<TypePackId, std::string> cycleTpNames;
+    Set<void*> seen;
     // `$$$` was chosen as the tombstone for `usedNames` since it is not a valid name syntactically and is relatively short for string comparison
     // reasons.
-    DenseHashSet<std::string> usedNames{"$$$"};
+    DenseHashSet2<std::string> usedNames;
     size_t indentation = 0;
 
     bool exhaustive;
@@ -213,9 +213,13 @@ struct StringifierState
         if (!n.empty())
             return n;
 
+        const bool isForGeneric = FFlag::LuauBetterInferredGenericNames
+            ? nullptr != get<GenericType>(follow(ty))
+            : false;
+
         for (int count = 0; count < 256; ++count)
         {
-            std::string candidate = generateName(usedNames.size() + count);
+            std::string candidate = generateName(usedNames.size() + count, isForGeneric);
             if (!usedNames.contains(candidate))
             {
                 usedNames.insert(candidate);
@@ -224,7 +228,7 @@ struct StringifierState
             }
         }
 
-        return generateName(s);
+        return generateName(s, isForGeneric);
     }
 
     int previousNameIndex = 0;
@@ -236,9 +240,14 @@ struct StringifierState
         if (!n.empty())
             return n;
 
+        const bool isForGeneric =
+            FFlag::LuauBetterInferredGenericNames
+            ? nullptr != get<GenericTypePack>(follow(ty))
+            : false;
+
         for (int count = 0; count < 256; ++count)
         {
-            std::string candidate = generateName(previousNameIndex + count);
+            std::string candidate = generateName(previousNameIndex + count, isForGeneric);
             if (!usedNames.contains(candidate))
             {
                 previousNameIndex += count;
@@ -248,7 +257,7 @@ struct StringifierState
             }
         }
 
-        return generateName(s);
+        return generateName(s, isForGeneric);
     }
 
     void emit(const std::string& s)
@@ -1397,8 +1406,8 @@ void TypeStringifier::stringify(TypePackId tpid, const std::vector<std::optional
 static void assignCycleNames(
     const std::set<TypeId>& cycles,
     const std::set<TypePackId>& cycleTPs,
-    DenseHashMap<TypeId, std::string>& cycleNames,
-    DenseHashMap<TypePackId, std::string>& cycleTpNames,
+    DenseHashMap2<TypeId, std::string>& cycleNames,
+    DenseHashMap2<TypePackId, std::string>& cycleTpNames,
     bool exhaustive
 )
 {
@@ -1879,7 +1888,7 @@ std::string dump(const std::vector<TypePackId>& typePacks)
     return toStringVector(typePacks, dumpOptions());
 }
 
-std::string dump(DenseHashMap<TypeId, TypeId>& types)
+std::string dump(DenseHashMap2<TypeId, TypeId>& types)
 {
     std::string s = "{";
     ToStringOptions& opts = dumpOptions();
@@ -1893,7 +1902,7 @@ std::string dump(DenseHashMap<TypeId, TypeId>& types)
     return s;
 }
 
-std::string dump(DenseHashMap<TypePackId, TypePackId>& types)
+std::string dump(DenseHashMap2<TypePackId, TypePackId>& types)
 {
     std::string s = "{";
     ToStringOptions& opts = dumpOptions();
@@ -1922,10 +1931,15 @@ std::string dump(const ScopePtr& scope, const char* name)
     return s;
 }
 
-std::string generateName(size_t i)
+constexpr const char kGenericTypeLetters[] = "TUVWXYZABCDEFGHIJKLMNOPQRS";
+
+std::string generateName(size_t i, bool isForGeneric)
 {
     std::string n;
-    n = char('a' + i % 26);
+    if (isForGeneric)
+        n = kGenericTypeLetters[i % 26];
+    else
+        n = char('a' + i % 26);
     if (i >= 26)
         n += std::to_string(i / 26);
     return n;

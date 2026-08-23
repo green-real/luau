@@ -367,9 +367,9 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "typeguard_in_assert_position")
     LUAU_REQUIRE_NO_ERRORS(result);
 
     if (!FFlag::DebugLuauForceOldSolver)
-        CHECK("<a>(a) -> a & number" == toString(requireType("f")));
+        CHECK("<T>(T) -> T & number" == toString(requireType("f")));
     else
-        CHECK("<a>(a) -> number" == toString(requireType("f")));
+        CHECK("<T>(T) -> number" == toString(requireType("f")));
 }
 
 TEST_CASE_FIXTURE(BuiltinsFixture, "refine_unknown_to_table_then_test_a_prop")
@@ -709,7 +709,7 @@ TEST_CASE_FIXTURE(Fixture, "free_type_is_equal_to_an_lvalue")
     }
     else
     {
-        CHECK_EQ(toString(requireTypeAtPosition({3, 33})), "a");       // a == b
+        CHECK_EQ(toString(requireTypeAtPosition({3, 33})), "T");       // a == b
         CHECK_EQ(toString(requireTypeAtPosition({3, 36})), "string?"); // a == b
     }
 }
@@ -1466,7 +1466,7 @@ TEST_CASE_FIXTURE(RefinementExternTypeFixture, "typeguard_cast_free_table_to_vec
 
     CHECK_EQ("never", toString(requireTypeAtPosition({7, 28}))); // typeof(vec) == "Instance"
 
-    CHECK_EQ("{+ X: a, Y: b, Z: c +}", toString(requireTypeAtPosition({9, 28}))); // type(vec) ~= "vector" and typeof(vec) ~= "Instance"
+    CHECK_EQ("{+ X: T, Y: U, Z: V +}", toString(requireTypeAtPosition({9, 28}))); // type(vec) ~= "vector" and typeof(vec) ~= "Instance"
 }
 
 TEST_CASE_FIXTURE(RefinementExternTypeFixture, "typeguard_cast_instance_or_vector3_to_vector")
@@ -2449,7 +2449,7 @@ end)
 )"));
 }
 
-TEST_CASE_FIXTURE(Fixture, "refinements_table_intersection_limits" * doctest::timeout(1.5))
+TEST_CASE_FIXTURE(Fixture, "refinements_table_intersection_limits" * doctest::timeout(LUAU_TIMEOUT))
 {
     CheckResult result = check(R"(
 --!strict
@@ -2775,7 +2775,7 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "oss_1835")
     CHECK(get<OptionalValueAccess>(result.errors[0]));
 }
 
-TEST_CASE_FIXTURE(Fixture, "limit_complexity_of_arithmetic_type_functions" * doctest::timeout(0.5))
+TEST_CASE_FIXTURE(Fixture, "limit_complexity_of_arithmetic_type_functions" * doctest::timeout(LUAU_TIMEOUT))
 {
     ScopedFastFlag _{FFlag::DebugLuauForceOldSolver, false};
 
@@ -3098,7 +3098,7 @@ TEST_CASE_FIXTURE(BuiltinsFixture, "non_conditional_context_in_if_should_not_ref
     CHECK_EQ("Type 'table' does not have key 'foo'", toString(result.errors[0]));
 }
 
-TEST_CASE_FIXTURE(Fixture, "type_function_reduction_with_union_type_application" * doctest::timeout(0.5))
+TEST_CASE_FIXTURE(Fixture, "type_function_reduction_with_union_type_application" * doctest::timeout(LUAU_TIMEOUT))
 {
     ScopedFastFlag sffs[] = {
         {FFlag::DebugLuauForceOldSolver, false},
@@ -3269,6 +3269,32 @@ TEST_CASE_FIXTURE(Fixture, "cli_181894_refinement_cancelled_by_for_loop")
 
         local _ = closestChanger.Instances
     )"));
+}
+
+TEST_CASE_FIXTURE(BuiltinsFixture, "unification_with_refinements_doesnt_impact_freevars")
+{
+    DOES_NOT_PASS_OLD_SOLVER_GUARD();
+
+    ScopedFastFlag sffs[] = {
+        {FFlag::DebugLuauAssertOnForcedConstraint, true},
+        {FFlag::LuauRemovePrimitiveTypeConstraintAndSubtypingUnifier, true},
+    };
+
+    LUAU_REQUIRE_NO_ERRORS(check(R"(
+        local keys: { unknown } = {}
+
+        local function sorter(a, b): boolean
+            if type(a) == "number" and type(b) == "number" then
+                return a < b
+            end
+
+            return tostring(a) < tostring(b)
+        end
+
+        table.sort(keys, sorter)
+    )"));
+
+    CHECK_EQ("(unknown, unknown) -> boolean", toString(requireType("sorter")));
 }
 
 TEST_SUITE_END();
