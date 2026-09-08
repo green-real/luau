@@ -2990,6 +2990,9 @@ void IrLoweringA64::lowerInst(IrInst& inst, uint32_t index, const IrBlock& next)
         int ra = vmRegOp(OP_A(inst));
         int aux = intOp(OP_B(inst));
 
+        // ipairs-style traversal is handled in IR
+        CODEGEN_ASSERT(aux >= 0);
+
         // clear extra variables since we might have more than two
         if (aux > 2)
         {
@@ -3009,39 +3012,41 @@ void IrLoweringA64::lowerInst(IrInst& inst, uint32_t index, const IrBlock& next)
             build.ldr(x4, mem(x1, offsetof(LuaTable, array)));
             build.add(x4, x4, w2, kTValueSizeLog2); // implicit uxtw
 
-            Label arrayLoop, skipArray, skipArrayNil;
+            Label skipArray, skipArrayNil;
 
-            // the array part is walked inline, and only the node part is worth a call
-            build.setLabel(arrayLoop);
+            // first we advance index through the array portion
+            // while (unsigned(index) < unsigned(sizearray))
+            Label arrayLoop = build.setLabel();
             build.ldr(w6, mem(x1, offsetof(LuaTable, sizearray)));
             build.cmp(w2, w6);
             build.b(ConditionA64::UnsignedGreaterEqual, skipArray);
 
-            // the index recorded is one past the element handed out, so it advances either way
+            // if element is nil, we increment the index; if it's not, we still need 'index + 1' inside
             build.add(w2, w2, uint16_t(1));
 
             CODEGEN_ASSERT(LUA_TNIL == 0);
             build.ldr(w6, mem(x4, offsetof(TValue, tt)));
             build.cbz(w6, skipArrayNil);
 
-            // setpvalue(ra + 2, index, LU_TAG_ITERATOR), where only the low half is the index.
-            // The upper half and the tag were set before the loop and do not change.
+            // setpvalue(ra + 2, reinterpret_cast<void*>(uintptr_t(index + 1)), LU_TAG_ITERATOR);
             build.str(w2, mem(rBase, (ra + 2) * sizeof(TValue) + offsetof(TValue, value.p)));
+            // Extra should already be set to LU_TAG_ITERATOR
+            // Tag should already be set to lightuserdata
 
-            // setnvalue(ra + 3, double(index))
+            // setnvalue(ra + 3, double(index + 1));
             build.scvtf(d0, w2);
             build.str(d0, mem(rBase, (ra + 3) * sizeof(TValue) + offsetof(TValue, value.n)));
             build.mov(w6, LUA_TNUMBER);
             build.str(w6, mem(rBase, (ra + 3) * sizeof(TValue) + offsetof(TValue, tt)));
 
-            // setobj2s(L, ra + 4, e)
+            // setobj2s(L, ra + 4, e);
             build.ldr(q0, mem(x4, 0));
             build.str(q0, mem(rBase, (ra + 4) * sizeof(TValue)));
 
             build.b(labelOp(OP_C(inst)));
 
             build.setLabel(skipArrayNil);
-            // index was already advanced, so only the element pointer has to catch up
+            // index already incremented, advance to next array element
             build.add(x4, x4, uint16_t(sizeof(TValue)));
             build.b(arrayLoop);
 
