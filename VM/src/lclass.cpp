@@ -15,18 +15,15 @@
 #include "lualib.h"
 #include "lvm.h"
 
-LUAU_FASTFLAG(LuauManagedDebugNames)
-
 LuauClass* luaR_newblankclass(lua_State* L, TString* name, bool isopen)
 {
-    LuauClass* classobject = luaM_newgco(L, LuauClass, sizeof(LuauClass), L->activememcat);
+    LuauClass* classobject = luaM_newgco(L, LuauClass, sizeof(LuauClass), L->activememcat, LUA_TCLASS);
     luaC_init(L, classobject, LUA_TCLASS);
     classobject->name = name;
     classobject->super = NULL;
     classobject->staticmembers = NULL;
     classobject->memberstooffset = NULL;
     classobject->offsettomember = NULL;
-    classobject->metatable = NULL;
     classobject->instancemetatable = NULL;
     classobject->numberofinstancemembers = 0;
     classobject->numberofallmembers = 0;
@@ -50,11 +47,7 @@ static void luaR_setupconstructor(lua_State* L, LuauClass* classobject, LuaTable
     // environment.
     Closure* constructor = luaF_newCclosure(L, 1, env);
     constructor->c.f = luaR_constructobject;
-
-    if (FFlag::LuauManagedDebugNames)
-        constructor->c.debugname = luaS_new(L, "luaR_constructobject");
-    else
-        constructor->c.debugname_DEPRECATED = "luaR_constructobject";
+    constructor->c.debugname = luaS_new(L, "luaR_constructobject");
 
     // Capture the classobject to construct as an upvalue.
     setclassvalue(L, &constructor->c.upvals[0], classobject);
@@ -76,11 +69,7 @@ static void luaR_setupconstructor(lua_State* L, LuauClass* classobject, LuaTable
     // overwrite this.
     Closure* defaultCtor = luaF_newCclosure(L, 1, env);
     defaultCtor->c.f = luaR_defaultcreateobject;
-
-    if (FFlag::LuauManagedDebugNames)
-        defaultCtor->c.debugname = luaS_new(L, "luaR_defaultcreateobject");
-    else
-        defaultCtor->c.debugname_DEPRECATED = "luaR_defaultcreateobject";
+    defaultCtor->c.debugname = luaS_new(L, "luaR_defaultcreateobject");
 
     setclassvalue(L, &defaultCtor->c.upvals[0], classobject);
     LUAU_ASSERT(iswhite(obj2gco(defaultCtor)));
@@ -335,7 +324,7 @@ int luaR_constructobject(lua_State* L)
     Closure* cl = clvalue(L->ci->func);
     LuauClass* classobject = classvalue(&cl->c.upvals[0]);
 
-    LuauObject* self = luaM_newgco(L, LuauObject, sizeof(LuauObject), L->activememcat);
+    LuauObject* self = luaM_newgco(L, LuauObject, sizeof(LuauObject), L->activememcat, LUA_TOBJECT);
     memset(self, 0, sizeof(LuauObject));
     luaC_init(L, self, LUA_TOBJECT);
     self->lclass = classobject;
@@ -418,9 +407,6 @@ int luaR_defaultcreateobject(lua_State* L)
     }
 
     L->top--;
-
-    // Preserve the GC invariant, moving barrier back once after writing multiple objects (similar to SETLIST)
-    luaC_barrierfast(L, classinst);
 
     return 0;
 }

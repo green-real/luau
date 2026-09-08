@@ -9,8 +9,6 @@
 using namespace Luau;
 
 LUAU_FASTFLAG(DebugLuauForceOldSolver)
-LUAU_FASTFLAG(LuauSubtypeUnionsTogether)
-LUAU_FASTFLAG(LuauDropUnionSubtypeReasoning)
 LUAU_FASTFLAG(LuauNewTypePathErrorMessages)
 
 TEST_SUITE_BEGIN("UnionTypes");
@@ -563,8 +561,6 @@ Table type 'X' not compatible with type '{ w: number }' because the former is mi
 
 TEST_CASE_FIXTURE(Fixture, "error_detailed_union_all")
 {
-    ScopedFastFlag _{FFlag::LuauDropUnionSubtypeReasoning, true};
-
     CheckResult result = check(R"(
         type X = { x: number }
         type Y = { y: number }
@@ -845,8 +841,6 @@ TEST_CASE_FIXTURE(Fixture, "union_of_functions_with_variadics")
 
 TEST_CASE_FIXTURE(Fixture, "union_of_functions_with_mismatching_arg_variadics")
 {
-    ScopedFastFlag _{FFlag::LuauDropUnionSubtypeReasoning, true};
-
     CheckResult result = check(R"(
         function f(x : (number) -> ())
             local y : ((number?) -> ()) | ((...number) -> ()) = x -- OK
@@ -912,7 +906,7 @@ TEST_CASE_FIXTURE(Fixture, "less_greedy_unification_with_union_types")
 
     LUAU_REQUIRE_NO_ERRORS(result);
 
-    CHECK_EQ("<a>(({ read x: a } & { x: number }) | ({ read x: a } & { x: string })) -> { x: number } | { x: string }", toString(requireType("f")));
+    CHECK_EQ("<T>(({ read x: T } & { x: number }) | ({ read x: T } & { x: string })) -> { x: number } | { x: string }", toString(requireType("f")));
 }
 
 TEST_CASE_FIXTURE(Fixture, "less_greedy_unification_with_union_types_2")
@@ -1094,8 +1088,6 @@ TEST_CASE_FIXTURE(Fixture, "oss_2134")
 
 TEST_CASE_FIXTURE(Fixture, "oss_2393")
 {
-    ScopedFastFlag _{FFlag::LuauSubtypeUnionsTogether, true};
-
     LUAU_REQUIRE_NO_ERRORS(check(R"(
         --!strict
 

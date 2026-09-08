@@ -28,11 +28,10 @@ LUAU_FLAGVERSION(LuauExportValueSyntax, 4)
 LUAU_FASTFLAGVARIABLE(DebugLuauNoInline)
 LUAU_FASTFLAGVARIABLE(DebugLuauUserDefinedClasses)
 LUAU_FASTFLAGVARIABLE(LuauAllowGlobalDeclarationToBeCalledClass)
-LUAU_FASTFLAGVARIABLE(LuauDisallowExternClassInTypeDefinitions)
-LUAU_FASTFLAGVARIABLE(LuauStoreConstKeywordBegin)
 LUAU_FASTFLAGVARIABLE(LuauTrackPrefixLocal)
 LUAU_FASTFLAGVARIABLE(LuauNoDuplicateBinaryPrefix)
-LUAU_FASTFLAGVARIABLE(LuauFunctionReturnTypePackLessTypeGroups)
+LUAU_FASTFLAGVARIABLE(LuauSingleTypeOptionalPackReturnsAttributeParens)
+LUAU_FASTFLAGVARIABLE(DebugLuauIfLocalSyntax)
 
 // Clip with DebugLuauReportReturnTypeVariadicWithTypeSuffix
 bool luau_telemetry_parsed_return_type_variadic_with_type_suffix = false;
@@ -581,6 +580,10 @@ AstStat* Parser::parseIf()
 
     nextLexeme(); // if / elseif
 
+    if (FFlag::DebugLuauIfLocalSyntax &&
+        (lexer.current().type == Lexeme::ReservedLocal || (lexer.current().type == Lexeme::Name && AstName(lexer.current().name) == "const")))
+        return parseIfLocalCondition(start);
+
     AstExpr* cond = parseExpr();
 
     Lexeme matchThen = lexer.current();
@@ -590,9 +593,62 @@ AstStat* Parser::parseIf()
 
     AstStatBlock* thenbody = parseBlock();
 
-    AstStat* elsebody = nullptr;
     Location end = start;
     std::optional<Location> elseLocation;
+    AstStat* elsebody = parseElseBody(start, matchThen, thenbody, end, elseLocation);
+
+    return allocator.alloc<AstStatIf>(Location(start, end), cond, thenbody, elsebody, thenLocation, elseLocation);
+}
+
+// (`if' | `elseif') (`local' | `const') binding `=' exp then block {elseif exp then block} [else block] end
+//
+// LUAU_NOINLINE keeps the `if local`/`if const` locals off parseIf's frame: parseIf recurses through
+// long if/elseif chains and this variant is rarely taken. `start` is the location of the already-
+// consumed `if`/`elseif` keyword; the current lexeme is the `local`/`const` keyword.
+LUAU_NOINLINE AstStat* Parser::parseIfLocalCondition(const Location& start)
+{
+    LUAU_ASSERT(FFlag::DebugLuauIfLocalSyntax);
+
+    bool condIsConst = (lexer.current().type == Lexeme::Name && AstName(lexer.current().name) == "const");
+    std::optional<Location> condKeywordLocation = lexer.current().location;
+    nextLexeme(); // consume 'local' or 'const'
+
+    Binding binding = parseBinding(condIsConst);
+
+    if (lexer.current().type == ',')
+        report(lexer.current().location, "Expected '=' after variable name in 'if local', got ','; only a single binding is allowed");
+
+    expectAndConsume('=', "if local declaration");
+
+    AstExpr* cond = parseExpr();
+
+    unsigned int localsBegin = saveLocals();
+    AstLocal* condLocal = pushLocal(binding);
+
+    Lexeme matchThen = lexer.current();
+    std::optional<Location> thenLocation;
+    if (expectAndConsume(Lexeme::ReservedThen, "if statement"))
+        thenLocation = matchThen.location;
+
+    AstStatBlock* thenbody = parseBlock();
+
+    // Restore locals after then-block so condLocal is not visible in else/elseif
+    restoreLocals(localsBegin);
+
+    Location end = start;
+    std::optional<Location> elseLocation;
+    AstStat* elsebody = parseElseBody(start, matchThen, thenbody, end, elseLocation);
+
+    return allocator.alloc<AstStatIf>(
+        Location(start, end), cond, thenbody, elsebody, thenLocation, elseLocation, condLocal, condIsConst, condKeywordLocation
+    );
+}
+
+AstStat* Parser::parseElseBody(const Location& start, const Lexeme& matchThen, AstStatBlock* thenbody, Location& end, std::optional<Location>& elseLocation)
+{
+    AstStat* elsebody = nullptr;
+    end = start;
+    elseLocation = std::nullopt;
 
     if (lexer.current().type == Lexeme::ReservedElseif)
     {
@@ -632,7 +688,7 @@ AstStat* Parser::parseIf()
             thenbody->hasEnd = hasEnd;
     }
 
-    return allocator.alloc<AstStatIf>(Location(start, end), cond, thenbody, elsebody, thenLocation, elseLocation);
+    return elsebody;
 }
 
 // while exp do block end
@@ -1286,9 +1342,7 @@ AstStat* Parser::parseLocal(
 
         Location location{start.begin, body->location.end};
 
-        AstStatLocalFunction* node = allocator.alloc<AstStatLocalFunction>(
-            location, var, body, isConst, isConst && FFlag::LuauStoreConstKeywordBegin ? keywordPosition : Position::missing()
-        );
+        AstStatLocalFunction* node = allocator.alloc<AstStatLocalFunction>(location, var, body, isConst, isConst ? keywordPosition : Position::missing());
         if (options.storeCstData)
         {
             cstNodeMap[node] = cstAttrLists != nullptr
@@ -1503,7 +1557,7 @@ LUAU_NOINLINE AstStat* Parser::parseClassStat(const Location& start, bool export
     //
     // ... must fail. This gets the job done but maybe we can do something
     // slightly more performant here (e.g.: a "scratch" set).
-    DenseHashSet2<AstName> classMemberNamespace;
+    DenseHashSet<AstName> classMemberNamespace;
 
     while (lexer.current().type != Lexeme::ReservedEnd && lexer.current().type != Lexeme::Eof)
     {
@@ -1592,14 +1646,6 @@ LUAU_NOINLINE AstStat* Parser::parseClassStat(const Location& start, bool export
                     report(name.location, "Classes cannot define '%s' as a metamethod", name.name.value);
                 else if (kAllowedMetamethods.count(name.name.value) == 0)
                     report(name.location, "Cannot use '%s' as a method name: names starting with '__' are reserved", name.name.value);
-            }
-
-            if (name.name == "__init")
-            {
-                if (body->args.size < 1)
-                    report(name.location, "__init must have at least one parameter");
-                else if (body->args.data[0]->name != "self")
-                    report(body->args.data[0]->location, "__init's first parameter must be named self");
             }
 
             // TODO CLI-200853: We should support attributes, we do not need
@@ -1829,17 +1875,10 @@ AstStat* Parser::parseDeclaration(const Location& start, const AstArray<AstAttr*
     // global variable declaration whose name is `class`, not as a malformed class declaration. This allows
     // us to support a global table like string/math/bit32 called `class`. CLI-203833 tracks the work to actually
     // remove support for `declare class X [extends Y]` syntax.
-    else if (FFlag::LuauDisallowExternClassInTypeDefinitions
-                 ? AstName(lexer.current().name) == "extern"
-                 : (AstName(lexer.current().name) == "class" &&
-                    (FFlag::LuauAllowGlobalDeclarationToBeCalledClass ? lexer.lookahead().type != ':' : true)) ||
-                       AstName(lexer.current().name) == "extern")
+    else if (AstName(lexer.current().name) == "extern")
     {
-        bool foundExtern = false;
         if (AstName(lexer.current().name) == "extern")
         {
-            if (!FFlag::LuauDisallowExternClassInTypeDefinitions)
-                foundExtern = true;
             nextLexeme();
             if (AstName(lexer.current().name) != "type")
                 return reportStatError(
@@ -1859,17 +1898,14 @@ AstStat* Parser::parseDeclaration(const Location& start, const AstArray<AstAttr*
             superName = parseName("supertype name").name;
         }
 
-        if (FFlag::LuauDisallowExternClassInTypeDefinitions || foundExtern)
-        {
-            if (AstName(lexer.current().name) != "with")
-                report(
-                    lexer.current().location,
-                    "Expected `with` keyword before listing properties of the external type, but got %s instead",
-                    lexer.current().name
-                );
-            else
-                nextLexeme();
-        }
+        if (AstName(lexer.current().name) != "with")
+            report(
+                lexer.current().location,
+                "Expected `with` keyword before listing properties of the external type, but got %s instead",
+                lexer.current().name
+            );
+        else
+            nextLexeme();
 
         TempVector<AstDeclaredExternTypeProperty> props(scratchDeclaredClassProps);
         AstTableIndexer* indexer = nullptr;
@@ -2550,6 +2586,11 @@ AstTypePack* Parser::parseOptionalReturnType(Position* returnSpecifierPosition)
     return nullptr;
 }
 
+static bool isTypeFollow(Lexeme::Type c)
+{
+    return c == '|' || c == '?' || c == '&';
+}
+
 // ReturnType ::= Type | `(' TypeList `)'
 AstTypePack* Parser::parseReturnType()
 {
@@ -2606,16 +2647,32 @@ AstTypePack* Parser::parseReturnType()
             // TODO(CLI-140667): stop parsing type suffix when varargAnnotation != nullptr - this should be a parse error
             AstType* inner = nullptr;
 
-            if (varargAnnotation == nullptr &&
-                (FFlag::LuauFunctionReturnTypePackLessTypeGroups ? (lexer.current().type == '&' || lexer.current().type == '|') : true))
+            bool parensBelongToInnerGroup = false;
+            if (FFlag::LuauSingleTypeOptionalPackReturnsAttributeParens)
             {
-                inner = allocator.alloc<AstTypeGroup>(location, result[0]);
-
-                if (options.storeCstData)
-                    cstNodeMap[inner] = allocator.alloc<CstTypeGroup>(closeParenFound ? closeParenthesesPosition : Position::missing());
+                if (varargAnnotation == nullptr && isTypeFollow(lexer.current().type))
+                {
+                    inner = allocator.alloc<AstTypeGroup>(location, result[0]);
+                    parensBelongToInnerGroup = true;
+                    if (options.storeCstData)
+                        cstNodeMap[inner] = allocator.alloc<CstTypeGroup>(closeParenFound ? closeParenthesesPosition : Position::missing());
+                }
+                else
+                    inner = result[0];
             }
             else
-                inner = result[0];
+            {
+                if (varargAnnotation == nullptr)
+                {
+                    inner = allocator.alloc<AstTypeGroup>(location, result[0]);
+
+                    if (options.storeCstData)
+                        cstNodeMap[inner] = allocator.alloc<CstTypeGroup>(closeParenFound ? closeParenthesesPosition : Position::missing());
+                }
+                else
+                    inner = result[0];
+            }
+
 
             AstType* returnType = parseTypeSuffix(inner, begin.location);
 
@@ -2629,11 +2686,19 @@ AstTypePack* Parser::parseReturnType()
 
             AstTypePackExplicit* node =
                 allocator.alloc<AstTypePackExplicit>(Location{location.begin, endPos}, AstTypeList{copy(&returnType, 1), varargAnnotation});
-            if (options.storeCstData)
-                cstNodeMap[node] = FFlag::LuauFunctionReturnTypePackLessTypeGroups
-                                       ? allocator.alloc<CstTypePackExplicit>(location.begin, closeParenthesesPosition, copy(commaPositions))
-                                       : allocator.alloc<CstTypePackExplicit>();
-            return node;
+            if (FFlag::LuauSingleTypeOptionalPackReturnsAttributeParens && options.storeCstData)
+            {
+                cstNodeMap[node] = parensBelongToInnerGroup
+                                       ? allocator.alloc<CstTypePackExplicit>()
+                                       : allocator.alloc<CstTypePackExplicit>(location.begin, closeParenthesesPosition, copy(commaPositions));
+                return node;
+            }
+            else
+            {
+                if (options.storeCstData)
+                    cstNodeMap[node] = allocator.alloc<CstTypePackExplicit>();
+                return node;
+            }
         }
 
         AstTypePackExplicit* node = allocator.alloc<AstTypePackExplicit>(location, AstTypeList{copy(result), varargAnnotation});
@@ -3040,11 +3105,6 @@ AstType* Parser::parseFunctionTypeTail(
     return allocator.alloc<AstTypeFunction>(
         Location(begin.location, returnType->location), attributes, generics, genericPacks, paramTypes, paramNames, returnType
     );
-}
-
-static bool isTypeFollow(Lexeme::Type c)
-{
-    return c == '|' || c == '?' || c == '&';
 }
 
 // Type ::=

@@ -15,7 +15,6 @@
 #include <stdio.h>
 
 LUAU_FASTFLAG(LuauCIProto)
-LUAU_FASTFLAG(LuauManagedDebugNames)
 LUAU_FASTFLAGVARIABLE(LuauEnumMoreEdges)
 
 static void validateobjref(global_State* g, GCObject* f, GCObject* t)
@@ -153,8 +152,6 @@ static void validateclass(global_State* g, LuauClass* lco)
         if (i >= lco->numberofinstancemembers)
             validateref(g, obj, &lco->staticmembers[i - lco->numberofinstancemembers]);
     }
-    if (lco->metatable)
-        validateobjref(g, obj, obj2gco(lco->metatable));
     if (lco->instancemetatable)
         validateobjref(g, obj, obj2gco(lco->instancemetatable));
 }
@@ -419,16 +416,8 @@ static void dumpclosure(FILE* f, Closure* cl)
 
     if (cl->isC)
     {
-        if (FFlag::LuauManagedDebugNames)
-        {
-            if (TString* str = cl->c.debugname)
-                fprintf(f, ",\"name\":\"%s\"", getstr(str));
-        }
-        else
-        {
-            if (cl->c.debugname_DEPRECATED)
-                fprintf(f, ",\"name\":\"%s\"", cl->c.debugname_DEPRECATED + 0);
-        }
+        if (TString* str = cl->c.debugname)
+            fprintf(f, ",\"name\":\"%s\"", getstr(str));
 
         if (cl->nupvalues)
         {
@@ -525,10 +514,7 @@ static void dumpthread(FILE* f, lua_State* th)
 
                 if (cl->isC)
                 {
-                    if (FFlag::LuauManagedDebugNames)
-                        fprintf(f, "\"frame:%s\"", cl->c.debugname ? getstr(cl->c.debugname) : "[C]");
-                    else
-                        fprintf(f, "\"frame:%s\"", cl->c.debugname_DEPRECATED ? cl->c.debugname_DEPRECATED : "[C]");
+                    fprintf(f, "\"frame:%s\"", cl->c.debugname ? getstr(cl->c.debugname) : "[C]");
                 }
                 else
                 {
@@ -631,11 +617,6 @@ static void dumpclass(FILE* f, LuauClass* lco)
     }
     fprintf(f, R"(],"staticmembers":[)");
     dumprefs(f, lco->staticmembers, lco->numberofallmembers - lco->numberofinstancemembers);
-    fprintf(f, R"(],"metatable":)");
-    if (lco->metatable)
-        dumpref(f, obj2gco(lco->metatable));
-    else
-        fprintf(f, "null");
     fprintf(f, R"(,"instancemetatable":)");
     if (lco->instancemetatable)
         dumpref(f, obj2gco(lco->instancemetatable));
@@ -851,12 +832,9 @@ static void enumclosure(EnumContext* ctx, Closure* cl)
 {
     if (cl->isC)
     {
-        if (FFlag::LuauManagedDebugNames)
-            enumnode(ctx, obj2gco(cl), sizeCclosure(cl->nupvalues), cl->c.debugname ? getstr(cl->c.debugname) : nullptr);
-        else
-            enumnode(ctx, obj2gco(cl), sizeCclosure(cl->nupvalues), cl->c.debugname_DEPRECATED);
+        enumnode(ctx, obj2gco(cl), sizeCclosure(cl->nupvalues), cl->c.debugname ? getstr(cl->c.debugname) : nullptr);
 
-        if (FFlag::LuauEnumMoreEdges && FFlag::LuauManagedDebugNames && cl->c.debugname)
+        if (FFlag::LuauEnumMoreEdges && cl->c.debugname)
             enumedge(ctx, obj2gco(cl), obj2gco(cl->c.debugname), "name");
     }
     else
@@ -1053,9 +1031,6 @@ static void enumclass(EnumContext* ctx, LuauClass* lco)
 
     for (uint32_t i = 0; i < lco->numberofallmembers; i++)
         enumedge(ctx, obj, obj2gco(lco->offsettomember[i]), "membername");
-
-    if (lco->metatable)
-        enumedge(ctx, obj, obj2gco(lco->metatable), "metatable");
 
     if (FFlag::LuauEnumMoreEdges && lco->instancemetatable)
         enumedge(ctx, obj, obj2gco(lco->instancemetatable), "instancemetatable");

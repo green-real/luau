@@ -8,7 +8,7 @@
 #include "Luau/BytecodeBuilder.h"
 #include "Luau/ParseResult.h"
 #include "Luau/Compiler.h"
-#include "Luau/DenseHash2.h"
+#include "Luau/DenseHash.h"
 #include "Luau/StringUtils.h"
 #include "Luau/Type.h"
 #include "Luau/TypeFunction.h"
@@ -23,6 +23,8 @@
 #include <set>
 #include <vector>
 
+LUAU_FASTINTVARIABLE(DebugLuauTypeFunctionRuntimeHeapLimit, 0)
+
 LUAU_DYNAMIC_FASTINT(LuauTypeFunctionSerdeIterationLimit)
 LUAU_FASTFLAG(LuauIntegerType2)
 
@@ -33,6 +35,7 @@ LUAU_FASTFLAGVARIABLE(LuauUdtfErrorHandling)
 LUAU_FASTFLAGVARIABLE(LuauUdtfCreateSingletonFixErrorMessage)
 LUAU_FASTFLAGVARIABLE(LuauUdtfTypeUseTaggedMetatable)
 LUAU_FASTFLAGVARIABLE(LuauUdtfTypeToStringMetamethod)
+LUAU_FASTFLAGVARIABLE(LuauUdtfFixTypeNameTypo)
 
 namespace Luau
 {
@@ -56,7 +59,16 @@ TypeFunctionRuntime::TypeFunctionRuntime(NotNull<InternalErrorReporter> ice, Not
 {
 }
 
-TypeFunctionRuntime::~TypeFunctionRuntime() {}
+TypeFunctionRuntime::~TypeFunctionRuntime()
+{
+    if (FInt::DebugLuauTypeFunctionRuntimeHeapLimit > 0)
+    {
+        // state depends on heapSize not being free'd first, so ensure the
+        // correct order here.
+        state.reset();
+        heapSize.reset();
+    }
+}
 
 std::optional<std::string> TypeFunctionRuntime::registerFunction_DEPRECATED(AstStatTypeFunction* function)
 {
@@ -235,7 +247,16 @@ void TypeFunctionRuntime::prepareState()
     if (state)
         return;
 
-    state = StateRef(lua_newstate(typeFunctionAlloc, nullptr), lua_close);
+    if (FInt::DebugLuauTypeFunctionRuntimeHeapLimit > 0)
+    {
+        // Create a unique pointer so that the pointer given to the runtime
+        // is stable.
+        heapSize = std::make_unique<size_t>(0);
+        state = StateRef{lua_newstate(typeFunctionAllocWithLimit, heapSize.get()), lua_close};
+    }
+    else
+        state = StateRef(lua_newstate(typeFunctionAlloc, nullptr), lua_close);
+
     lua_State* L = state.get();
 
     lua_setthreaddata(L, this);
@@ -251,6 +272,19 @@ void TypeFunctionRuntime::prepareState()
 }
 
 constexpr int kTypeUserdataTag = 42;
+
+void* typeFunctionAllocWithLimit(void* ud, void* ptr, size_t osize, size_t nsize)
+{
+    size_t* heapSize = static_cast<size_t*>(ud);
+
+    if ((*heapSize) - osize + nsize > size_t(FInt::DebugLuauTypeFunctionRuntimeHeapLimit))
+        return nullptr;
+
+    (*heapSize) -= osize;
+    (*heapSize) += nsize;
+
+    return typeFunctionAlloc(ud, ptr, osize, nsize);
+}
 
 void* typeFunctionAlloc(void* ud, void* ptr, size_t osize, size_t nsize)
 {
@@ -312,9 +346,10 @@ std::optional<TypeFunctionError> checkResultForError(lua_State* L, const char* t
                 Location{}, RuntimeError{format("'%s' type function errored at runtime: %s", typeFunctionName, lua_tostring(L, -1))}
             };
 
+        const char* tname = FFlag::LuauUdtfFixTypeNameTypo ? luaL_typename(L, -1) : lua_typename(L, -1);
         return TypeFunctionError{
             Location{},
-            RuntimeError{format("'%s' type function errored at runtime: raised an error of type %s", typeFunctionName, lua_typename(L, -1))}
+            RuntimeError{format("'%s' type function errored at runtime: raised an error of type %s", typeFunctionName, tname)}
         };
     }
 }
@@ -2560,8 +2595,8 @@ bool TypeFunctionProperty::isWriteOnly() const
 
 class TypeFunctionCloner
 {
-    using SeenTypes = DenseHashMap2<TypeFunctionTypeId, TypeFunctionTypeId>;
-    using SeenTypePacks = DenseHashMap2<TypeFunctionTypePackId, TypeFunctionTypePackId>;
+    using SeenTypes = DenseHashMap<TypeFunctionTypeId, TypeFunctionTypeId>;
+    using SeenTypePacks = DenseHashMap<TypeFunctionTypePackId, TypeFunctionTypePackId>;
 
     NotNull<TypeFunctionRuntime> typeFunctionRuntime;
 

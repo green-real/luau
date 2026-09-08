@@ -8,7 +8,7 @@
 #include "Luau/Clone.h"
 #include "Luau/Common.h"
 #include "Luau/DcrLogger.h"
-#include "Luau/DenseHash2.h"
+#include "Luau/DenseHash.h"
 #include "Luau/Generalization.h"
 #include "Luau/HashUtil.h"
 #include "Luau/Instantiation.h"
@@ -44,13 +44,14 @@ LUAU_FASTFLAGVARIABLE(DebugLuauLogSolver)
 LUAU_FASTFLAGVARIABLE(DebugLuauLogBindings)
 LUAU_FASTFLAGVARIABLE(LuauCloneTypeFunctionFromForeignArena)
 LUAU_FASTFLAGVARIABLE(LuauInstantiationCheckArguments)
+LUAU_FASTFLAGVARIABLE(LuauInstantiationCheckArgumentsDedup)
 LUAU_FASTFLAG(DebugLuauUserDefinedClasses)
 LUAU_FASTFLAGVARIABLE(LuauRemoveConstraintSolverEmplace)
-LUAU_FASTFLAG(LuauBidirectionalInferenceVariadics)
+LUAU_FASTFLAGVARIABLE(LuauForceLess)
 LUAU_FASTFLAG(LuauRemovePrimitiveTypeConstraintAndSubtypingUnifier)
 LUAU_FASTFLAG(LuauCyclicRequireTypeInference)
-LUAU_FASTFLAGVARIABLE(LuauIndexingIntoErrorGivesError)
 LUAU_FASTFLAGVARIABLE(LuauRelaxConstraintOrderingForFunctionCheck)
+LUAU_FASTFLAGVARIABLE(LuauBlockingTypeAliasExpansion)
 LUAU_FASTFLAG(LuauIterableConstraintMutatesIterator)
 
 namespace Luau
@@ -303,10 +304,24 @@ struct InstantiationQueuer : IterativeTypeVisitor
 
     bool visit(TypeId ty, const PendingExpansionType& petv) override
     {
-        if (FFlag::LuauCyclicRequireTypeInference)
-            solver->pushConstraint(scope, location, TypeAliasExpansionConstraint{ty}, moduleName);
+        if (FFlag::LuauInstantiationCheckArgumentsDedup)
+        {
+            if (!solver->typeAliasesToExpand.contains(ty))
+            {
+                if (FFlag::LuauCyclicRequireTypeInference)
+                    solver->typeAliasesToExpand[ty] = solver->pushConstraint(scope, location, TypeAliasExpansionConstraint{ty}, moduleName);
+                else
+                    solver->typeAliasesToExpand[ty] = solver->DEPRECATED_pushConstraint(scope, location, TypeAliasExpansionConstraint{ty});
+            }
+        }
         else
-            solver->DEPRECATED_pushConstraint(scope, location, TypeAliasExpansionConstraint{ty});
+        {
+            if (FFlag::LuauCyclicRequireTypeInference)
+                solver->pushConstraint(scope, location, TypeAliasExpansionConstraint{ty}, moduleName);
+            else
+                solver->DEPRECATED_pushConstraint(scope, location, TypeAliasExpansionConstraint{ty});
+        }
+
         return false;
     }
 
@@ -436,7 +451,7 @@ ConstraintSolver::ConstraintSolver(
     NotNull<TypeFunctionRuntime> typeFunctionRuntime,
     NotNull<Scope> rootScope,
     std::vector<NotNull<Constraint>> constraints,
-    NotNull<DenseHashMap2<Scope*, TypeId>> scopeToFunction,
+    NotNull<DenseHashMap<Scope*, TypeId>> scopeToFunction,
     ModulePtr module,
     NotNull<ModuleResolver> moduleResolver,
     std::vector<RequireCycle> requireCycles,
@@ -646,7 +661,7 @@ void ConstraintSolver::run()
         for (auto& constraint : constraintSet.deferredConstraints)
         {
             if (get<BlockedType>(follow(get<GeneralizationConstraint>(*constraint)->generalizedType)))
-                tryDispatch(NotNull{constraint.get()}, false);
+                tryDispatch(NotNull{constraint.get()}, true);
         }
     }
 
@@ -854,7 +869,7 @@ void ConstraintSolver::bind(NotNull<const Constraint> constraint, TypeId ty, Typ
 
     // This follow shouldn't be needed, but if for some reason we end up
     // with a bound type, we want to also follow it when doing this
-    // occurence check.
+    // occurrence check.
     if (follow(ty) == boundTo)
     {
         auto freshTy = freshType(arena, builtinTypes, constraint->scope, Polarity::Mixed);
@@ -936,7 +951,7 @@ bool ConstraintSolver::tryDispatch(NotNull<const Constraint> constraint, bool fo
     else if (auto taec = get<TypeAliasExpansionConstraint>(*constraint))
         success = tryDispatch(*taec, constraint);
     else if (auto fcc = get<FunctionCallConstraint>(*constraint))
-        success = tryDispatch(*fcc, constraint, force);
+        success = tryDispatch(*fcc, constraint);
     else if (auto fcc = get<FunctionCheckConstraint>(*constraint))
         success = tryDispatch(*fcc, constraint, force);
     else if (auto fcc = get<DEPRECATED_PrimitiveTypeConstraint>(*constraint); !FFlag::LuauRemovePrimitiveTypeConstraintAndSubtypingUnifier && fcc)
@@ -1108,6 +1123,9 @@ bool ConstraintSolver::tryDispatch(const GeneralizationConstraint& c, NotNull<co
 
 bool ConstraintSolver::tryDispatch(const IterableConstraint& c, NotNull<const Constraint> constraint, bool force)
 {
+    if (FFlag::LuauForceLess)
+         force = false;
+
     /*
      * for .. in loops can play out in a bunch of different ways depending on
      * the shape of iteratee.
@@ -1315,6 +1333,11 @@ bool ConstraintSolver::tryDispatch(const TypeAliasExpansionConstraint& c, NotNul
         bindResult(builtinTypes->errorType);
         return true;
     }
+
+    // If the type function itself is still blocked, we have to wait for it
+    // Not using 'isBlocked' as this constraint has special handling of pending and TypeFunctionInstanceType
+    if (FFlag::LuauBlockingTypeAliasExpansion && get<BlockedType>(follow(tf->type)))
+        return block(tf->type, constraint);
 
     // Adding ReduceConstraint on type function for the constraint solver
     if (FFlag::LuauCloneTypeFunctionFromForeignArena)
@@ -1578,7 +1601,7 @@ void ConstraintSolver::fillInDiscriminantTypes(NotNull<const Constraint> constra
     }
 }
 
-bool ConstraintSolver::tryDispatch(const FunctionCallConstraint& c, NotNull<const Constraint> constraint, bool force)
+bool ConstraintSolver::tryDispatch(const FunctionCallConstraint& c, NotNull<const Constraint> constraint)
 {
     TypeId fn = follow(c.fn);
     TypePackId argsPack = follow(c.argsPack);
@@ -1686,7 +1709,7 @@ bool ConstraintSolver::tryDispatch(const FunctionCallConstraint& c, NotNull<cons
         constraint->location
     };
 
-    DenseHashSet2<TypeId> uniqueTypes;
+    DenseHashSet<TypeId> uniqueTypes;
     if (c.callSite)
     {
         if (FFlag::LuauCyclicRequireTypeInference)
@@ -1867,6 +1890,9 @@ bool ConstraintSolver::tryDispatch(const FunctionCallConstraint& c, NotNull<cons
 
 bool ConstraintSolver::tryDispatch(const FunctionCheckConstraint& c, NotNull<const Constraint> constraint, bool force)
 {
+    if (FFlag::LuauForceLess)
+        force = false;
+
     TypeId fn = follow(c.fn);
     const TypePackId argsPack = follow(c.argsPack);
 
@@ -1907,10 +1933,10 @@ bool ConstraintSolver::tryDispatch(const FunctionCheckConstraint& c, NotNull<con
     if (!ftv)
         return true;
 
-    DenseHashMap2<TypeId, TypeId> replacements;
-    DenseHashMap2<TypePackId, TypePackId> replacementPacks;
+    DenseHashMap<TypeId, TypeId> replacements;
+    DenseHashMap<TypePackId, TypePackId> replacementPacks;
 
-    DenseHashSet2<const void*> genericTypesAndPacks;
+    DenseHashSet<const void*> genericTypesAndPacks;
 
     Unifier2 u2{arena, builtinTypes, constraint->scope, NotNull{&iceReporter}};
 
@@ -1935,9 +1961,7 @@ bool ConstraintSolver::tryDispatch(const FunctionCheckConstraint& c, NotNull<con
     // We don't attempt to perform bidirectional inference on the self type.
     const size_t typeOffset = c.callSite->self ? 1 : 0;
 
-    const std::vector<TypeId> expectedArgs = FFlag::LuauBidirectionalInferenceVariadics
-                                                 ? extendTypePack(*arena, builtinTypes, ftv->argTypes, c.callSite->args.size + typeOffset).head
-                                                 : flatten(ftv->argTypes).first;
+    const std::vector<TypeId> expectedArgs = extendTypePack(*arena, builtinTypes, ftv->argTypes, c.callSite->args.size + typeOffset).head;
     const std::vector<TypeId> argPackHead = flatten(argsPack).first;
 
     for (size_t i = 0; i < c.callSite->args.size && i + typeOffset < expectedArgs.size() && i + typeOffset < argPackHead.size(); ++i)
@@ -2825,6 +2849,9 @@ bool ConstraintSolver::tryDispatch(const ReduceConstraint& c, NotNull<const Cons
 
 bool ConstraintSolver::tryDispatch(const ReducePackConstraint& c, NotNull<const Constraint> constraint, bool force)
 {
+    if (FFlag::LuauForceLess)
+        force = false;
+
     TypePackId tp = follow(c.tp);
 
     TypeFunctionContext context{NotNull{this}, constraint->scope, constraint, subtyping};
@@ -3079,7 +3106,7 @@ TypeId ConstraintSolver::instantiateFunctionType(
         return functionTypeId;
     }
 
-    DenseHashMap2<TypeId, TypeId> replacements;
+    DenseHashMap<TypeId, TypeId> replacements;
     auto typeParametersIter = ft->generics.begin();
 
     for (const TypeId typeArgument : typeArguments)
@@ -3097,7 +3124,7 @@ TypeId ConstraintSolver::instantiateFunctionType(
         replacements[*typeParametersIter++] = freshType(arena, builtinTypes, scope, Polarity::Mixed);
     }
 
-    DenseHashMap2<TypePackId, TypePackId> replacementPacks;
+    DenseHashMap<TypePackId, TypePackId> replacementPacks;
     auto typePackParametersIter = ft->genericPacks.begin();
 
     for (const TypePackId typePackArgument : typePackArguments)
@@ -3137,6 +3164,9 @@ TypeId ConstraintSolver::instantiateFunctionType(
 
 bool ConstraintSolver::tryDispatch(const PushTypeConstraint& c, NotNull<const Constraint> constraint, bool force)
 {
+    if (FFlag::LuauForceLess)
+        force = false;
+
     Unifier2 u2{arena, builtinTypes, constraint->scope, NotNull{&iceReporter}, &uninhabitedTypeFunctions};
 
     // NOTE: If we don't do this check up front, we almost immediately start
@@ -3149,7 +3179,7 @@ bool ConstraintSolver::tryDispatch(const PushTypeConstraint& c, NotNull<const Co
         return force;
     }
 
-    DenseHashSet2<const void*> empty;
+    DenseHashSet<const void*> empty;
     PushTypeResult result = pushTypeInto(
         c.astTypes, c.astExpectedTypes, NotNull{this}, NotNull{constraint}, NotNull{&empty}, NotNull{&u2}, subtyping, c.expectedType, c.expr
     );
@@ -3181,6 +3211,9 @@ bool ConstraintSolver::tryDispatch(const PushTypeConstraint& c, NotNull<const Co
 
 bool ConstraintSolver::tryDispatchIterableTable(TypeId iteratorTy, const IterableConstraint& c, NotNull<const Constraint> constraint, bool force)
 {
+    if (FFlag::LuauForceLess)
+        force = false;
+
     iteratorTy = follow(iteratorTy);
 
     if (get<FreeType>(iteratorTy))
@@ -3438,7 +3471,7 @@ TablePropLookupResult ConstraintSolver::lookupTableProp(
 
     if (isBlocked(subjectType))
         return {{subjectType}, std::nullopt};
-    else if (get<AnyType>(subjectType) || get<NeverType>(subjectType) || (FFlag::LuauIndexingIntoErrorGivesError && get<ErrorType>(subjectType)))
+    else if (get<AnyType>(subjectType) || get<NeverType>(subjectType) || get<ErrorType>(subjectType))
     {
         return {{}, subjectType};
     }
@@ -3854,7 +3887,7 @@ void ConstraintSolver::inheritBlocks(NotNull<const Constraint> source, NotNull<c
 
 void ConstraintSolver::unblock(TypeId ty, Location location)
 {
-    DenseHashSet2<TypeId> seen;
+    DenseHashSet<TypeId> seen;
 
     TypeId progressed = ty;
     while (true)

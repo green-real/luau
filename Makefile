@@ -107,7 +107,7 @@ LDFLAGS=
 
 # some gcc versions treat var in `if (type var = val)` as unused
 # some gcc versions treat variables used in constexpr if blocks as unused
-# some gcc versions warn maybe uninitalized on optional<std::string> members on structs
+# some gcc versions warn maybe uninitialized on optional<std::string> members on structs
 ifeq ($(findstring g++,$(shell $(CXX) --version)),g++)
 	CXXFLAGS+=-Wno-unused
 	CXXFLAGS+=-Wno-maybe-uninitialized
@@ -225,9 +225,9 @@ coverage: $(TESTS_TARGET) $(COMPILE_CLI_TARGET)
 	mv default.profraw codegen.profraw
 	$(TESTS_TARGET) -ts=Conformance --codegen --fflags=true
 	mv default.profraw codegen-flags.profraw
-	$(COMPILE_CLI_TARGET) --codegennull --target=a64 --fflags=DebugLuauUserDefinedClasses=true tests/conformance
+	$(COMPILE_CLI_TARGET) --codegennull --target=a64 --fflags=DebugLuauUserDefinedClasses=true,DebugLuauIfLocalSyntax=true tests/conformance
 	mv default.profraw codegen-a64.profraw
-	$(COMPILE_CLI_TARGET) --codegennull --target=x64 --fflags=DebugLuauUserDefinedClasses=true tests/conformance
+	$(COMPILE_CLI_TARGET) --codegennull --target=x64 --fflags=DebugLuauUserDefinedClasses=true,DebugLuauIfLocalSyntax=true tests/conformance
 	mv default.profraw codegen-x64.profraw
 	llvm-profdata merge *.profraw -o default.profdata
 	rm *.profraw

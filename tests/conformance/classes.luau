@@ -51,6 +51,12 @@ class Point
 
 end
 
+expectpass("access_with_brackets", function() 
+    local p1 = Point.new({ x = 1, y =2 })
+    assert(p1["x"] == 1)
+    assert(p1["y"] == 2)
+end)
+
 class NotAPoint
     public x
 end
@@ -922,8 +928,13 @@ expectpass("class inheritance __eq inherited", function()
     local a = EqChild.new({ val = 42, label = "a" })
     local b = EqChild.new({ val = 42, label = "b" })
     local c = EqChild.new({ val = 99, label = "a" })
+    local d = EqParent.new({ val = 42 })
     assert(a == b)
+    assert(b == a)
     assert(a ~= c)
+    assert(c ~= a)
+    assert(a == d)
+    assert(b == a)
 end)
 
 expectpass("class inheritance GC stress", function()

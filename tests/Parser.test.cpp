@@ -25,8 +25,8 @@ LUAU_FASTFLAG(LuauAllowGlobalDeclarationToBeCalledClass)
 LUAU_FASTFLAG(LuauTrackPrefixLocal)
 
 LUAU_FASTFLAG(LuauNoDuplicateBinaryPrefix)
-LUAU_FASTFLAG(LuauFunctionReturnTypePackLessTypeGroups)
-
+LUAU_FASTFLAG(LuauSingleTypeOptionalPackReturnsAttributeParens)
+LUAU_FASTFLAG(DebugLuauIfLocalSyntax)
 // Clip with DebugLuauReportReturnTypeVariadicWithTypeSuffix
 extern bool luau_telemetry_parsed_return_type_variadic_with_type_suffix;
 
@@ -2960,7 +2960,7 @@ TEST_CASE_FIXTURE(Fixture, "parse_nested_ast_type_group")
 
 TEST_CASE_FIXTURE(Fixture, "parse_return_type_ast_type_pack_explicit")
 {
-    ScopedFastFlag sff{FFlag::LuauFunctionReturnTypePackLessTypeGroups, true};
+    ScopedFastFlag sff{FFlag::LuauSingleTypeOptionalPackReturnsAttributeParens, true};
 
     AstStatBlock* stat = parse(R"(
         type Foo = () -> (string)
@@ -4175,7 +4175,7 @@ TEST_CASE_FIXTURE(Fixture, "type_group_with_cst")
 
 TEST_CASE_FIXTURE(Fixture, "type_pack_explicit_with_cst")
 {
-    ScopedFastFlag sff{FFlag::LuauFunctionReturnTypePackLessTypeGroups, true};
+    ScopedFastFlag sff{FFlag::LuauSingleTypeOptionalPackReturnsAttributeParens, true};
 
     ParseOptions parseOptions;
     parseOptions.storeCstData = true;
@@ -4201,6 +4201,46 @@ TEST_CASE_FIXTURE(Fixture, "type_pack_explicit_with_cst")
     CHECK_EQ(cstNode->closeParenthesesPosition, Position{0, 33});
     REQUIRE_EQ(cstNode->commaPositions.size, 1);
     CHECK_EQ(cstNode->commaPositions.data[0], Position{0, 22});
+}
+
+TEST_CASE_FIXTURE(Fixture, "optional_return_type_pack_with_cst_func_return")
+{
+    ScopedFastFlag sff2{FFlag::LuauSingleTypeOptionalPackReturnsAttributeParens, true};
+    ParseOptions parseOptions;
+    parseOptions.storeCstData = true;
+
+    // `(string | number)?` as a return type is a single optional type:
+    //     union( group( union(string, number) ), nil )
+    // The one pair of parens belongs to the GROUP, so the enclosing return
+    // type pack is implicit and must NOT record any parenthesis positions.
+    ParseResult result = parseEx("type T = () -> (string | number)?", parseOptions);
+    REQUIRE(result.root);
+    REQUIRE_EQ(result.root->body.size, 1);
+
+    auto typeAlias = result.root->body.data[0]->as<AstStatTypeAlias>();
+    REQUIRE(typeAlias);
+    auto funcType = typeAlias->type->as<AstTypeFunction>();
+    REQUIRE(funcType);
+
+    auto typePack = funcType->returnTypes->as<AstTypePackExplicit>();
+    REQUIRE(typePack);
+    REQUIRE_EQ(typePack->typeList.types.size, 1);
+    REQUIRE(!typePack->typeList.tailType);
+
+    // The sole return type is the optional union `(string | number)?`.
+    auto optional = typePack->typeList.types.data[0]->as<AstTypeUnion>();
+    REQUIRE(optional);
+    REQUIRE_EQ(optional->types.size, 2);
+    CHECK(optional->types.data[0]->is<AstTypeGroup>());    // (string | number)
+    CHECK(optional->types.data[1]->is<AstTypeOptional>()); // ?
+
+    // The parens belong to the group, NOT the return type pack.
+    const auto baseCstNode = result.cstNodeMap.find(typePack);
+    REQUIRE(baseCstNode);
+    const auto cstNode = (*baseCstNode)->as<CstTypePackExplicit>();
+    REQUIRE(cstNode);
+    CHECK_EQ(cstNode->openParenthesesPosition, Position::missing());
+    CHECK_EQ(cstNode->closeParenthesesPosition, Position::missing());
 }
 
 TEST_SUITE_END();
@@ -6210,6 +6250,169 @@ TEST_CASE_FIXTURE(Fixture, "extern_read_write_attributes")
     CHECK_EQ(declaredExternType->props.data[1].access, AstTableAccess::Write);
     CHECK_EQ(declaredExternType->props.data[2].access, AstTableAccess::ReadWrite);
     CHECK_EQ(declaredExternType->props.data[3].access, AstTableAccess::ReadWrite);
+}
+
+TEST_CASE_FIXTURE(Fixture, "parse_if_local")
+{
+    ScopedFastFlag sff = {FFlag::DebugLuauIfLocalSyntax, true};
+
+    AstStatBlock* block = parse(R"(
+        if local x = getValue() then
+            print(x)
+        end
+    )");
+
+    REQUIRE(block != nullptr);
+    REQUIRE(block->body.size == 1);
+    AstStatIf* ifStat = block->body.data[0]->as<AstStatIf>();
+    REQUIRE(ifStat != nullptr);
+    CHECK(ifStat->conditionLocal != nullptr);
+    CHECK(ifStat->conditionLocal->name == "x");
+    CHECK_FALSE(ifStat->conditionIsConst);
+    CHECK(ifStat->condition != nullptr);
+}
+
+TEST_CASE_FIXTURE(Fixture, "parse_if_const")
+{
+    ScopedFastFlag sff = {FFlag::DebugLuauIfLocalSyntax, true};
+
+    AstStatBlock* block = parse(R"(
+        if const y = getValue() then
+            print(y)
+        end
+    )");
+
+    REQUIRE(block != nullptr);
+    REQUIRE(block->body.size == 1);
+    AstStatIf* ifStat = block->body.data[0]->as<AstStatIf>();
+    REQUIRE(ifStat != nullptr);
+    CHECK(ifStat->conditionLocal != nullptr);
+    CHECK(ifStat->conditionLocal->name == "y");
+    CHECK(ifStat->conditionIsConst);
+}
+
+TEST_CASE_FIXTURE(Fixture, "parse_if_local_with_annotation")
+{
+    ScopedFastFlag sff = {FFlag::DebugLuauIfLocalSyntax, true};
+
+    AstStatBlock* block = parse(R"(
+        if local x: number = getValue() then
+            print(x)
+        end
+    )");
+
+    REQUIRE(block != nullptr);
+    REQUIRE(block->body.size == 1);
+    AstStatIf* ifStat = block->body.data[0]->as<AstStatIf>();
+    REQUIRE(ifStat != nullptr);
+    CHECK(ifStat->conditionLocal != nullptr);
+    CHECK(ifStat->conditionLocal->annotation != nullptr);
+}
+
+TEST_CASE_FIXTURE(Fixture, "parse_elseif_local")
+{
+    ScopedFastFlag sff = {FFlag::DebugLuauIfLocalSyntax, true};
+
+    AstStatBlock* block = parse(R"(
+        if local x = a() then
+            print(x)
+        elseif local y = b() then
+            print(y)
+        end
+    )");
+
+    REQUIRE(block != nullptr);
+    REQUIRE(block->body.size == 1);
+    AstStatIf* ifStat = block->body.data[0]->as<AstStatIf>();
+    REQUIRE(ifStat != nullptr);
+    CHECK(ifStat->conditionLocal != nullptr);
+    CHECK(ifStat->conditionLocal->name == "x");
+
+    AstStatIf* elseifStat = ifStat->elsebody->as<AstStatIf>();
+    REQUIRE(elseifStat != nullptr);
+    CHECK(elseifStat->conditionLocal != nullptr);
+    CHECK(elseifStat->conditionLocal->name == "y");
+}
+
+TEST_CASE_FIXTURE(Fixture, "parse_if_local_error_missing_equals")
+{
+    ScopedFastFlag sff = {FFlag::DebugLuauIfLocalSyntax, true};
+
+    matchParseError("if local x then end", "Expected '=' when parsing if local declaration, got 'then'");
+}
+
+TEST_CASE_FIXTURE(Fixture, "parse_if_local_error_multiple_bindings")
+{
+    ScopedFastFlag sff = {FFlag::DebugLuauIfLocalSyntax, true};
+
+    matchParseError(
+        "if local x, y = getValue() then end", "Expected '=' after variable name in 'if local', got ','; only a single binding is allowed"
+    );
+}
+
+TEST_CASE_FIXTURE(Fixture, "parse_if_local_disabled_flag")
+{
+    ScopedFastFlag sff = {FFlag::DebugLuauIfLocalSyntax, false};
+
+    // With flag disabled, `if local` should fail to parse
+    matchParseError("if local x = getValue() then end", "Expected identifier when parsing expression, got 'local'");
+}
+
+TEST_CASE_FIXTURE(Fixture, "parse_if_local_interleaved_with_non_initializers")
+{
+    ScopedFastFlag sff = {FFlag::DebugLuauIfLocalSyntax, true};
+
+    AstStatBlock* block = parse(R"(
+        if a() then
+            print(1)
+        elseif local y = b() then
+            print(y)
+        elseif c() then
+            print(3)
+        end
+    )");
+
+    REQUIRE(block != nullptr);
+    REQUIRE(block->body.size == 1);
+
+    AstStatIf* head = block->body.data[0]->as<AstStatIf>();
+    REQUIRE(head != nullptr);
+    CHECK(head->conditionLocal == nullptr);
+
+    AstStatIf* firstElseif = head->elsebody->as<AstStatIf>();
+    REQUIRE(firstElseif != nullptr);
+    REQUIRE(firstElseif->conditionLocal != nullptr);
+    CHECK(firstElseif->conditionLocal->name == "y");
+
+    AstStatIf* secondElseif = firstElseif->elsebody->as<AstStatIf>();
+    REQUIRE(secondElseif != nullptr);
+    CHECK(secondElseif->conditionLocal == nullptr);
+}
+
+TEST_CASE_FIXTURE(Fixture, "parse_deeply_nested_if_local")
+{
+    ScopedFastFlag sff = {FFlag::DebugLuauIfLocalSyntax, true};
+
+    constexpr int depth = 64;
+
+    std::string src = "if local v0 = f() then\n";
+    for (int i = 1; i < depth; ++i)
+        src += "elseif local v" + std::to_string(i) + " = f() then\n";
+    src += "end\n";
+
+    AstStatBlock* block = parse(src);
+    REQUIRE(block != nullptr);
+    REQUIRE(block->body.size == 1);
+
+    int count = 0;
+    for (AstStatIf* current = block->body.data[0]->as<AstStatIf>(); current != nullptr;
+         current = current->elsebody ? current->elsebody->as<AstStatIf>() : nullptr)
+    {
+        REQUIRE(current->conditionLocal != nullptr);
+        ++count;
+    }
+
+    CHECK(count == depth);
 }
 
 // TODO unit tests for various parse errors.
